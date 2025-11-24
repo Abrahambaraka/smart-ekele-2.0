@@ -1,0 +1,5 @@
+{
+  "name": "Smart Ekele - School Management Application",
+  "description": "A modern, multi-school management web application built with React, designed to streamline administrative and educational tasks for educational institutions. It features a role-based architecture for Super Admins, School Directors, and Teachers.",
+  "requestFramePermissions": []
+}

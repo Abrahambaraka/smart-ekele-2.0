@@ -1,0 +1,135 @@
+
+================================================================================
+PROJET : SMART EKELE
+BACKEND : FIREBASE (Firestore)
+VERSION : 2.0
+================================================================================
+
+Ce document décrit la structure des collections NoSQL pour Firebase Firestore.
+
+INSTRUCTIONS D'INSTALLATION :
+1. Créez un projet Firebase sur console.firebase.google.com.
+2. Activez "Authentication" (Email/Password).
+3. Activez "Firestore Database".
+4. Copiez les configurations dans `lib/firebase.ts`.
+
+================================================================================
+1. STRUCTURE DES COLLECTIONS (NoSQL)
+================================================================================
+
+-- COLLECTION: schools
+   DOC_ID: Auto-ID
+   FIELDS:
+     - name: string
+     - status: string ('Active')
+     - created_at: timestamp
+
+-- COLLECTION: users (Mappe les utilisateurs Auth)
+   DOC_ID: UID (Identique à Firebase Auth UID)
+   FIELDS:
+     - full_name: string
+     - email: string
+     - role: string ('school_director', 'teacher')
+     - school_id: string (Reference to schools doc id)
+
+-- COLLECTION: invites
+   DOC_ID: Auto-ID
+   FIELDS:
+     - email: string
+     - school_id: string
+     - role: string
+     - created_at: timestamp
+
+-- COLLECTION: classes
+   DOC_ID: Auto-ID
+   FIELDS:
+     - name: string
+     - level: string
+     - school_id: string
+     - teacher_id: string (Optional)
+     - created_at: timestamp
+
+-- COLLECTION: students
+   DOC_ID: Auto-ID
+   FIELDS:
+     - name: string
+     - school_id: string
+     - class_id: string
+     - status: string
+     - enrollment_date: string (ISO date)
+     - phone_number: string
+     - parent_phone_number: string
+     - parent_address: string
+
+-- COLLECTION: payments
+   DOC_ID: Auto-ID
+   FIELDS:
+     - amount: number
+     - school_id: string
+     - student_id: string
+     - student_name: string (Dénormalisé pour faciliter l'affichage)
+     - class_name: string (Dénormalisé)
+     - status: string
+     - description: string
+     - due_date: string
+     - created_at: timestamp
+
+================================================================================
+2. FIRESTORE RULES (Sécurité)
+================================================================================
+Copiez ceci dans l'onglet "Rules" de Firestore pour sécuriser les données par école.
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper function to check if user belongs to the school
+    function belongsToSchool(schoolId) {
+      return request.auth != null && 
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.school_id == schoolId;
+    }
+    
+    // Helper function to check if user is a director
+    function isDirector() {
+       return request.auth != null && 
+              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'school_director';
+    }
+
+    // SCHOOLS
+    match /schools/{schoolId} {
+      allow read: if belongsToSchool(schoolId);
+      allow create: if request.auth != null; // For new registrations
+    }
+
+    // USERS
+    match /users/{userId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth.uid == userId;
+    }
+
+    // INVITES
+    match /invites/{inviteId} {
+      allow read: if true; // Public read for registration check
+      allow write: if isDirector() && belongsToSchool(request.resource.data.school_id);
+      allow delete: if request.auth != null; // To clean up after register
+    }
+
+    // CLASSES
+    match /classes/{classId} {
+      allow read: if belongsToSchool(resource.data.school_id);
+      allow write: if isDirector() && belongsToSchool(request.resource.data.school_id);
+    }
+
+    // STUDENTS
+    match /students/{studentId} {
+      allow read: if belongsToSchool(resource.data.school_id);
+      allow write: if isDirector() && belongsToSchool(request.resource.data.school_id);
+    }
+
+    // PAYMENTS
+    match /payments/{paymentId} {
+      allow read: if belongsToSchool(resource.data.school_id);
+      allow write: if isDirector() && belongsToSchool(request.resource.data.school_id);
+    }
+  }
+}
