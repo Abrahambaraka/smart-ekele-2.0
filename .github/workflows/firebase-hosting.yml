@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - master
   workflow_dispatch:
 
 jobs:
@@ -36,10 +37,19 @@ jobs:
           VITE_FIREBASE_MEASUREMENT_ID: ${{ secrets.VITE_FIREBASE_MEASUREMENT_ID }}
         run: npm run build
 
+      - name: Diagnostic – lister les sites Firebase Hosting
+        uses: w9jds/firebase-action@v13.24.0
+        with:
+          args: hosting:sites:list --project smart-ekele
+        env:
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+          PROJECT_ID: smart-ekele
+
       - name: Deploy to Firebase Hosting
         uses: w9jds/firebase-action@v13.24.0
         with:
-          args: deploy --only hosting
+          # On force le projet pour éviter tout doute d'alias
+          args: deploy --only hosting --project smart-ekele
         env:
           FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
           PROJECT_ID: smart-ekele
