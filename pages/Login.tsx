@@ -1,8 +1,12 @@
 
-import React, { useState, FormEvent, ReactNode } from 'react';
+import React, { useEffect, useState, ReactNode } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { Role } from '../types';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { loginSchema, signUpSchema, type LoginForm, type SignUpForm } from '../lib/validation';
+import FormInput from '../components/FormInput';
 
 // --- Icon Components ---
 const iconProps = {
@@ -55,43 +59,7 @@ const Button: React.FC<ButtonProps> = ({ children, onClick, type = 'button', cla
   );
 };
 
-// --- InputField Component ---
-interface InputFieldProps {
-  id: string;
-  label: string;
-  type: string;
-  placeholder: string;
-  value: string;
-  onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
-  icon?: ReactNode;
-}
-
-const InputField: React.FC<InputFieldProps> = ({ id, label, type, placeholder, value, onChange, icon }) => {
-  return (
-    <div>
-      <label htmlFor={id} className="block mb-2 text-sm font-medium text-gray-700 dark:text-gray-200">
-        {label}
-      </label>
-      <div className="relative">
-        {icon && (
-          <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-gray-400">
-            {icon}
-          </div>
-        )}
-        <input
-          type={type}
-          id={id}
-          name={id}
-          value={value}
-          onChange={onChange}
-          placeholder={placeholder}
-          required
-          className={`w-full p-3 border border-gray-300 rounded-md bg-gray-50 text-gray-900 focus:ring-2 focus:ring-brand-primary focus:border-brand-primary transition duration-200 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-brand-secondary dark:focus:border-brand-secondary ${icon ? 'pl-10' : ''}`}
-        />
-      </div>
-    </div>
-  );
-};
+// Les champs d'entrée sont maintenant fournis par components/FormInput avec gestion d'erreurs/a11y.
 
 // --- Logo Component ---
 const Logo: React.FC = () => (
@@ -105,50 +73,52 @@ const Logo: React.FC = () => (
 // --- AuthForm Component ---
 const AuthForm: React.FC = () => {
   const [isSignUp, setIsSignUp] = useState(false);
-  const [fullName, setFullName] = useState('');
-  const [schoolName, setSchoolName] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  
-  const { login, register } = useAuth();
+  const [formError, setFormError] = useState<string>('');
+
+  const { login, register: registerAuth } = useAuth();
   const navigate = useNavigate();
+
+  const {
+    register,
+    handleSubmit,
+    reset,
+    setError,
+    formState: { errors, isSubmitting },
+  } = useForm<LoginForm & Partial<SignUpForm>>({
+    resolver: zodResolver(isSignUp ? signUpSchema : loginSchema),
+    mode: 'onBlur',
+  });
 
   const handleToggleMode = () => {
     setIsSignUp(prev => !prev);
   };
 
-  const handleSubmit = async (e: FormEvent) => {
-    e.preventDefault();
-    setIsLoading(true);
+  useEffect(() => {
+    // Réinitialiser le formulaire quand on change de mode
+    reset();
+    setFormError('');
+  }, [isSignUp, reset]);
 
+  const onSubmit = async (data: LoginForm & Partial<SignUpForm>) => {
+    setFormError('');
     if (isSignUp) {
-        if (password !== confirmPassword) {
-            alert("Les mots de passe ne correspondent pas.");
-            setIsLoading(false);
-            return;
-        }
-        if (password.length < 6) {
-            alert("Le mot de passe doit contenir au moins 6 caractères.");
-            setIsLoading(false);
-            return;
-        }
-
-        // Register user + Create School + Create Profile
-        const { error } = await register(email, password, fullName, schoolName);
-        if (error) {
-             alert(`Erreur d'inscription: ${error.message}`);
-        } else {
-            alert("Compte créé avec succès ! Vous êtes connecté.");
-        }
+      const { email, password, fullName, schoolName } = data;
+      const { error } = await registerAuth(email, password, fullName!, schoolName!);
+      if (error) {
+        setFormError(`Erreur d'inscription: ${error.message}`);
+        return;
+      }
+      // Succès: on peut naviguer ou afficher un message de succès silencieux
+      // navigate('/'); // décommentez si nécessaire
     } else {
+      const { email, password } = data;
       const { error } = await login(email, password);
       if (error) {
-        alert(`Erreur de connexion: ${error.message}`);
+        setFormError(`Erreur de connexion: ${error.message}`);
+        return;
       }
+      // navigate('/'); // optionnel
     }
-    setIsLoading(false);
   };
   
   return (
@@ -159,60 +129,65 @@ const AuthForm: React.FC = () => {
         {isSignUp ? 'Inscrivez votre établissement et commencez.' : 'Heureux de vous revoir !'}
       </p>
 
-      <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-6">
+      {formError && (
+        <div className="mb-4 p-3 rounded-md bg-red-50 border border-red-200 text-red-700 dark:bg-red-950/40 dark:border-red-900 dark:text-red-300">
+          {formError}
+        </div>
+      )}
+      <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 sm:space-y-6">
         {isSignUp && (
-            <div className="animate-fade-in space-y-4">
-                <InputField
-                    id="fullName"
-                    label="Nom complet (Directeur)"
-                    type="text"
-                    placeholder="Jean Dupont"
-                    value={fullName}
-                    onChange={(e) => setFullName(e.target.value)}
-                    icon={<UserIcon />}
+          <div className="animate-fade-in space-y-4">
+                <FormInput
+                  id="fullName"
+                  label="Nom complet (Directeur)"
+                  type="text"
+                  placeholder="Jean Dupont"
+                  icon={<UserIcon />}
+                  error={errors.fullName?.message as string}
+                  {...register('fullName')}
                 />
-                <InputField
-                    id="schoolName"
-                    label="Nom de l'école"
-                    type="text"
-                    placeholder="Collège Saint-Joseph"
-                    value={schoolName}
-                    onChange={(e) => setSchoolName(e.target.value)}
-                    icon={<SchoolIcon className="w-5 h-5" />}
+                <FormInput
+                  id="schoolName"
+                  label="Nom de l'école"
+                  type="text"
+                  placeholder="Collège Saint-Joseph"
+                  icon={<SchoolIcon className="w-5 h-5" />}
+                  error={errors.schoolName?.message as string}
+                  {...register('schoolName')}
                 />
             </div>
         )}
         
-        <InputField
+        <FormInput
           id="email"
           label="Email"
           type="email"
           placeholder="vous@example.com"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
           icon={<MailIcon />}
+          error={errors.email?.message as string}
+          {...register('email')}
         />
         
-        <InputField
+        <FormInput
           id="password"
           label="Mot de passe"
           type="password"
           placeholder="Entrez votre mot de passe"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
           icon={<LockIcon />}
+          error={errors.password?.message as string}
+          {...register('password')}
         />
         
         {isSignUp && (
             <div className="animate-fade-in">
-                <InputField
-                id="confirmPassword"
-                label="Confirmer le mot de passe"
-                type="password"
-                placeholder="Confirmez votre mot de passe"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                icon={<LockIcon />}
+                <FormInput
+                  id="confirmPassword"
+                  label="Confirmer le mot de passe"
+                  type="password"
+                  placeholder="Confirmez votre mot de passe"
+                  icon={<LockIcon />}
+                  error={errors.confirmPassword?.message as string}
+                  {...register('confirmPassword')}
                 />
             </div>
         )}
@@ -227,8 +202,8 @@ const AuthForm: React.FC = () => {
           </div>
         )}
         
-        <Button type="submit" disabled={isLoading}>
-          {isLoading ? (
+        <Button type="submit" disabled={isSubmitting}>
+          {isSubmitting ? (
             <span className="flex items-center justify-center">
               <span className="animate-spin h-5 w-5 border-2 border-white border-t-transparent rounded-full mr-2"></span>
               Traitement...
