@@ -1,6 +1,6 @@
 
 // Import the functions you need from the SDKs you need
-import { initializeApp } from "firebase/app";
+import { initializeApp, type FirebaseApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 // TODO: Add SDKs for Firebase products that you want to use
@@ -74,7 +74,7 @@ if (
 }
 
 // Initialize Firebase enrobé d'un try/catch pour expliquer les erreurs courantes
-let app;
+let app: FirebaseApp;
 try {
   app = initializeApp(firebaseConfig);
 } catch (e: any) {
@@ -86,3 +86,4 @@ try {
 // Initialize Services
 export const auth = getAuth(app);
 export const db = getFirestore(app);
+export { app };

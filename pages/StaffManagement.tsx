@@ -1,8 +1,9 @@
 
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { db } from '../lib/firebase';
+import { db, app } from '../lib/firebase';
 import { collection, query, where, getDocs, addDoc, deleteDoc, doc } from 'firebase/firestore';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 
 interface StaffMember {
     id: string;
@@ -75,16 +76,31 @@ const StaffManagement: React.FC = () => {
         }
 
         try {
-            await addDoc(collection(db, "invites"), {
+            const inviteRef = await addDoc(collection(db, "invites"), {
                 email: newEmail.toLowerCase(),
                 school_id: user.schoolId,
                 role: 'teacher',
                 created_at: new Date().toISOString()
             });
 
+            // Appeler la Cloud Function pour envoyer l'email via Gmail
+            try {
+                const functions = getFunctions(app);
+                const sendInviteEmail = httpsCallable(functions, 'sendInviteEmail');
+                await sendInviteEmail({
+                    email: newEmail.toLowerCase(),
+                    schoolId: user.schoolId,
+                    inviteId: inviteRef.id,
+                });
+            } catch (mailErr: any) {
+                console.error('Erreur lors de l\'envoi de l\'email:', mailErr);
+                // On continue: l'invitation Firestore existe, l'email peut être renvoyé plus tard
+            }
+
             setNewEmail('');
             fetchData();
-            alert(`Invitation envoyée ! Demandez à ${newEmail} de s'inscrire sur l'application pour rejoindre l'école.`);
+            alert(`Invitation créée et email d'invitation envoyé (si configuration Gmail en place).\n` +
+                  `Demandez à ${newEmail} de s'inscrire sur l'application avec cette adresse.`);
         } catch (err: any) {
             alert("Erreur lors de l'invitation: " + err.message);
         } finally {

@@ -45,11 +45,11 @@ jobs:
           FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
           PROJECT_ID: smart-ekele
 
-      - name: Deploy to Firebase Hosting
+      - name: Deploy to Firebase Hosting & Functions
         uses: w9jds/firebase-action@v13.24.0
         with:
           # On force le projet pour éviter tout doute d'alias
-          args: deploy --only hosting --project smart-ekele
+          args: deploy --only hosting,functions --project smart-ekele
         env:
           FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
           PROJECT_ID: smart-ekele

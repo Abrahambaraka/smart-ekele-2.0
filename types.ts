@@ -10,7 +10,8 @@ export interface User {
   name: string;
   email: string;
   role: Role;
-  schoolId?: number | string; // Updated to support Firestore String IDs
+  // Firestore utilise des IDs string
+  schoolId?: string;
 }
 
 export interface School {

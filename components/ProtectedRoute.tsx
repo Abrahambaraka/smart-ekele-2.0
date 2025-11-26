@@ -10,8 +10,17 @@ interface ProtectedRouteProps {
 }
 
 const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles }) => {
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
   const location = useLocation();
+
+  // Pendant le chargement du profil, on affiche un état neutre
+  if (loading) {
+    return (
+      <div className="w-full h-screen flex items-center justify-center text-slate-500">
+        Chargement...
+      </div>
+    );
+  }
 
   if (!user) {
     return <Navigate to="/login" state={{ from: location }} replace />;

@@ -62,13 +62,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         if (userProfile) {
           setUser(userProfile);
         } else {
-           // Fallback si le doc Firestore n'est pas encore prêt (rare mais possible)
-           setUser({
-              id: firebaseUser.uid,
-              email: firebaseUser.email!,
-              name: firebaseUser.email!,
-              role: Role.TEACHER // Default risky assumption
-           });
+          // Profil Firestore manquant: ne pas attribuer un rôle par défaut
+          console.warn("Profil utilisateur Firestore introuvable pour:", firebaseUser.uid);
+          setUser(null);
         }
       } else {
         setUser(null);
@@ -112,7 +108,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           
           // Déterminer le rôle et l'école
           let role = Role.SCHOOL_DIRECTOR;
-          let schoolId: number | string | null = null; // Changed to allow string IDs for Firestore schools
+          let schoolId: string | null = null;
 
           if (inviteData) {
               role = Role.TEACHER;
@@ -144,7 +140,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                       email: email,
                       name: fullName,
                       role: Role.TEACHER,
-                      schoolId: schoolId as number // Casting si nécessaire, bien que Firestore utilise des Strings
+                      schoolId: schoolId
                   });
 
               } else {
@@ -174,7 +170,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                       email: email,
                       name: fullName,
                       role: Role.SCHOOL_DIRECTOR,
-                      schoolId: newSchoolId as any // TypeScript fix
+                      schoolId: newSchoolId
                   });
               }
 
