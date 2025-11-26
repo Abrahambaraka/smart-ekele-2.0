@@ -4,6 +4,7 @@ import React, { useState, useMemo } from 'react';
 import { MOCK_CLASSES, MOCK_NOTIFICATIONS, MOCK_STUDENTS } from '../constants';
 import { Student, Role } from '../types';
 import { useAuth } from '../contexts/AuthContext';
+import { useSchoolSettings } from '../lib/useSchoolSettings';
 
 interface ClassReport {
   classId: number | string;
@@ -14,6 +15,7 @@ interface ClassReport {
 
 const ReportsDashboard: React.FC = () => {
     const { user } = useAuth();
+    const { settings } = useSchoolSettings(user?.schoolId);
 
     if (user?.role === Role.SUPER_ADMIN) {
         return (
@@ -108,7 +110,10 @@ const ReportsDashboard: React.FC = () => {
         });
 
 
-      const schoolName = "Lycée Salama"; // Consistent with payment receipt
+      const schoolName = settings?.display_name || "Établissement";
+      const logoUrl = settings?.logo_url;
+      const address = settings?.address || "";
+      const phone = settings?.phone || "";
       const reportDateFormatted = new Date(reportDate + 'T00:00:00').toLocaleDateString('fr-FR', {
         day: '2-digit',
         month: 'long',
@@ -141,6 +146,7 @@ const ReportsDashboard: React.FC = () => {
               .student-list li { padding: 2px 0; }
               .summary { margin-top: 10px; font-size: 9pt; }
               .footer p { font-size: 9pt; margin: 2px 0; }
+              .logo { width: 40px; height: 40px; object-fit: cover; border-radius: 6px; display: block; margin: 0 auto 6px; }
               @media print {
                   @page {
                     margin: 0;
@@ -154,10 +160,10 @@ const ReportsDashboard: React.FC = () => {
           <body>
             <div class="receipt-container">
               <div class="header center">
+                  ${logoUrl ? `<img src="${logoUrl}" alt="Logo" class="logo"/>` : ''}
                   <h1 class="bold">${schoolName.toUpperCase()}</h1>
-                  <p>123 Av. de l'Enseignement, Gombe</p>
-                  <p>Kinshasa, R.D. Congo</p>
-                  <p>Tel: +243 81 123 4567</p>
+                  ${address ? `<p>${address}</p>` : ''}
+                  ${phone ? `<p>Tel: ${phone}</p>` : ''}
                   <div class="line"></div>
                   <p class="bold">REGISTRE DE PRESENCE</p>
                   <p>${reportDateFormatted}</p>

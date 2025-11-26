@@ -3,9 +3,11 @@ import React, { useState, FormEvent, useMemo } from 'react';
 import { MOCK_NOTIFICATIONS, MOCK_CLASSES, MOCK_STUDENTS } from '../constants';
 import { useAuth } from '../contexts/AuthContext';
 import { Notification, Student } from '../types';
+import { useSchoolSettings } from '../lib/useSchoolSettings';
 
 const NotificationCenter: React.FC = () => {
     const { user } = useAuth();
+    const { settings } = useSchoolSettings(user?.schoolId);
     const [notifications, setNotifications] = useState<Notification[]>(MOCK_NOTIFICATIONS);
     const [isModalOpen, setIsModalOpen] = useState(false);
 
@@ -79,7 +81,8 @@ const NotificationCenter: React.FC = () => {
                 const className = studentClass ? studentClass.name : 'Classe inconnue';
                 const date = new Date().toLocaleDateString('fr-FR');
                 const studentNameUpper = student.name.toUpperCase();
-                const commonEnding = "Cordialement, Lycée Salama.";
+                const schoolName = settings?.display_name || 'Votre établissement';
+                const commonEnding = `Cordialement, ${schoolName}.`;
 
                 switch (parentCommType) {
                     case 'presence': 

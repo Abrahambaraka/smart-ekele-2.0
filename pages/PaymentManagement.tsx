@@ -4,6 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { db } from '../lib/firebase';
 import { collection, query, where, getDocs, addDoc } from 'firebase/firestore';
 import { PaymentStatus } from '../types';
+import { useSchoolSettings } from '../lib/useSchoolSettings';
 
 interface PaymentData {
     id: string;
@@ -26,6 +27,7 @@ interface StudentOption {
 
 const PaymentManagement: React.FC = () => {
     const { user } = useAuth();
+    const { settings } = useSchoolSettings(user?.schoolId);
     const [payments, setPayments] = useState<PaymentData[]>([]);
     const [loading, setLoading] = useState(true);
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -260,6 +262,9 @@ const PaymentManagement: React.FC = () => {
          const cashierName = user?.name || 'N/A';
          const studentName = payment.student_name || 'N/A';
          const className = payment.class_name || 'N/A';
+         const schoolName = settings?.display_name || 'Établissement';
+         const logoUrl = settings?.logo_url;
+         const footer = settings?.receipt_footer;
 
          const receiptHtml = `
             <html>
@@ -272,12 +277,14 @@ const PaymentManagement: React.FC = () => {
                     .bold { font-weight: bold; }
                     .line { border-top: 1px dashed #000; margin: 10px 0; }
                     .table { width: 100%; }
+                    .logo { width: 48px; height: 48px; object-fit: cover; border-radius: 6px; display: block; margin: 0 auto 6px; }
                 </style>
             </head>
             <body>
                 <div class="center">
+                    ${logoUrl ? `<img src="${logoUrl}" alt="Logo" class="logo"/>` : ''}
                     <h1 class="bold">RECU DE PAIEMENT</h1>
-                    <p>Smart Ekele School</p>
+                    <p>${schoolName}</p>
                 </div>
                 <div class="line"></div>
                 <p>Reçu #: ${payment.id.substring(0, 8)}</p>
@@ -291,6 +298,7 @@ const PaymentManagement: React.FC = () => {
                 </table>
                 <div class="line"></div>
                 <p class="bold right">TOTAL: ${payment.amount.toFixed(2)} $</p>
+                ${footer ? `<div class="line"></div><p class="center">${footer}</p>` : ''}
             </body>
             </html>
         `;

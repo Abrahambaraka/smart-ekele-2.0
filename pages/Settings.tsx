@@ -1,17 +1,29 @@
 
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import ThemeToggle from '../components/ThemeToggle';
 import ToggleSwitch from '../components/ToggleSwitch';
 import { db } from '../lib/firebase';
-import { collection, addDoc, writeBatch, doc } from 'firebase/firestore';
+import { collection, addDoc, writeBatch } from 'firebase/firestore';
 import { MOCK_CLASSES, MOCK_STUDENTS, MOCK_PAYMENTS } from '../constants';
 import { ClassLevel, StudentStatus, PaymentStatus } from '../types';
+import { useSchoolSettings } from '../lib/useSchoolSettings';
 
 const Settings: React.FC = () => {
     const { user } = useAuth();
     const [activeSection, setActiveSection] = useState('profile');
     const [seeding, setSeeding] = useState(false);
+    const { settings, loading: settingsLoading, save, uploadLogo } = useSchoolSettings(user?.schoolId);
+
+    // School settings state (controlled form)
+    const [schoolName, setSchoolName] = useState('');
+    const [schoolEmail, setSchoolEmail] = useState('');
+    const [schoolPhone, setSchoolPhone] = useState('');
+    const [schoolAddress, setSchoolAddress] = useState('');
+    const [receiptFooter, setReceiptFooter] = useState('');
+    const [logoUploading, setLogoUploading] = useState(false);
+    const [savingSettings, setSavingSettings] = useState(false);
+    const displayLogoUrl = useMemo(() => settings?.logo_url || '', [settings]);
 
     // State for various settings
     const [name, setName] = useState(user?.name || '');
@@ -49,6 +61,61 @@ const Settings: React.FC = () => {
     const handleFormSubmit = (e: React.FormEvent, formType: string) => {
         e.preventDefault();
         alert(`La fonctionnalité de mise à jour pour "${formType}" n'est pas implémentée dans cette démo.`);
+    };
+
+    // Hydrate local state from Firestore settings
+    React.useEffect(() => {
+        if (!settings) return;
+        setSchoolName(settings.display_name || '');
+        setSchoolEmail(settings.email || '');
+        setSchoolPhone(settings.phone || '');
+        setSchoolAddress(settings.address || '');
+        setReceiptFooter(settings.receipt_footer || '');
+    }, [settings]);
+
+    const handleSaveSchool = async () => {
+        if (!user?.id || !user?.schoolId) {
+            alert("Vous devez être connecté pour sauvegarder ces paramètres.");
+            return;
+        }
+        setSavingSettings(true);
+        try {
+            await save(user.id, {
+                display_name: schoolName.trim() || undefined,
+                email: schoolEmail.trim() || undefined,
+                phone: schoolPhone.trim() || undefined,
+                address: schoolAddress.trim() || undefined,
+                receipt_footer: receiptFooter.trim() || undefined,
+            });
+            alert('Paramètres de l\'établissement sauvegardés.');
+        } catch (e: any) {
+            console.error(e);
+            alert("Erreur lors de l'enregistrement: " + (e?.message || e));
+        } finally {
+            setSavingSettings(false);
+        }
+    };
+
+    const handleLogoChange: React.ChangeEventHandler<HTMLInputElement> = async (ev) => {
+        if (!ev.target.files || ev.target.files.length === 0) return;
+        const file = ev.target.files[0];
+        if (!file.type.startsWith('image/')) {
+            alert('Veuillez sélectionner une image.');
+            return;
+        }
+        if (!user?.id) return;
+        setLogoUploading(true);
+        try {
+            const url = await uploadLogo(file);
+            await save(user.id, { logo_url: url });
+        } catch (e: any) {
+            console.error(e);
+            alert("Échec de téléchargement du logo: " + (e?.message || e));
+        } finally {
+            setLogoUploading(false);
+            // reset file input value
+            ev.currentTarget.value = '';
+        }
     };
 
     const handleSeedData = async () => {
@@ -276,6 +343,57 @@ const Settings: React.FC = () => {
                         </SettingRow>
                     </SettingsCard>
                 );
+            case 'school':
+                return (
+                    <SettingsCard title="Établissement (branding)">
+                        <div className="p-4 md:p-6 space-y-4">
+                            <div className="flex items-center space-x-4">
+                                <div className="w-20 h-20 rounded overflow-hidden bg-slate-100 flex items-center justify-center">
+                                    {displayLogoUrl ? (
+                                        <img src={displayLogoUrl} alt="Logo établissement" className="w-full h-full object-cover" />
+                                    ) : (
+                                        <i className="fa-solid fa-school text-3xl text-slate-400" aria-hidden="true"></i>
+                                    )}
+                                </div>
+                                <div>
+                                    <label htmlFor="school-logo" className="cursor-pointer bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold px-4 py-2 rounded-md hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors text-sm inline-flex items-center">
+                                        <i className="fa-solid fa-upload mr-2"></i>{logoUploading ? 'Téléversement...' : 'Changer le logo'}
+                                    </label>
+                                    <input id="school-logo" type="file" accept="image/*" className="sr-only" onChange={handleLogoChange} disabled={logoUploading} />
+                                    {settingsLoading && <p className="text-xs text-slate-500 mt-1">Chargement des paramètres...</p>}
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Nom affiché de l'école</label>
+                                <input type="text" value={schoolName} onChange={e=>setSchoolName(e.target.value)} className={formInputClass} placeholder="Ex: Lycée Salama" />
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">E‑mail établissement</label>
+                                    <input type="email" value={schoolEmail} onChange={e=>setSchoolEmail(e.target.value)} className={formInputClass} placeholder="contact@ecole.tld" />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Téléphone</label>
+                                    <input type="tel" value={schoolPhone} onChange={e=>setSchoolPhone(e.target.value)} className={formInputClass} placeholder="+243 ..." />
+                                </div>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Adresse</label>
+                                <input type="text" value={schoolAddress} onChange={e=>setSchoolAddress(e.target.value)} className={formInputClass} placeholder="Rue, Ville, Pays" />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Pied de page du reçu</label>
+                                <textarea value={receiptFooter} onChange={e=>setReceiptFooter(e.target.value)} rows={3} className={formInputClass} placeholder="Merci pour votre paiement. ..." />
+                            </div>
+                            <div className="flex justify-end pt-2">
+                                <button type="button" onClick={handleSaveSchool} disabled={savingSettings} className="bg-brand-primary text-white font-semibold px-4 py-2 rounded-md shadow-md hover:bg-brand-secondary disabled:opacity-50">
+                                    {savingSettings ? 'Sauvegarde...' : 'Enregistrer'}
+                                </button>
+                            </div>
+                        </div>
+                    </SettingsCard>
+                );
             case 'accessibility':
                 return (
                     <SettingsCard title="Accessibilité">
@@ -360,7 +478,10 @@ const Settings: React.FC = () => {
             <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 md:gap-8">
                 <div className="lg:col-span-1">
                     <div className="space-y-1 bg-white dark:bg-slate-800 p-2 rounded-xl shadow-md sticky top-24">
-                        {sections.map(section => (
+                        {[
+                            ...sections,
+                            { id: 'school', label: "Établissement", icon: 'fa-solid fa-school' },
+                        ].map(section => (
                             <button
                                 key={section.id}
                                 onClick={() => setActiveSection(section.id)}
