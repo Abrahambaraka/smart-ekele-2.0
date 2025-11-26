@@ -8,6 +8,8 @@ import { collection, addDoc, writeBatch } from 'firebase/firestore';
 import { MOCK_CLASSES, MOCK_STUDENTS, MOCK_PAYMENTS } from '../constants';
 import { ClassLevel, StudentStatus, PaymentStatus } from '../types';
 import { useSchoolSettings } from '../lib/useSchoolSettings';
+import { useUserProfile } from '../lib/useUserProfile';
+import { updatePassword } from 'firebase/auth';
 
 const Settings: React.FC = () => {
     const { user } = useAuth();
@@ -26,6 +28,7 @@ const Settings: React.FC = () => {
     const displayLogoUrl = useMemo(() => settings?.logo_url || '', [settings]);
 
     // State for various settings
+    const { profile, save: saveUserProfile, uploadAvatar, loading: userProfileLoading } = useUserProfile(user?.id);
     const [name, setName] = useState(user?.name || '');
     const [email, setEmail] = useState(user?.email || '');
     const [bio, setBio] = useState('Enseignant passionné, dédié à la réussite de chaque élève.');
@@ -38,9 +41,10 @@ const Settings: React.FC = () => {
     const [securityAlerts, setSecurityAlerts] = useState(true);
     const [language, setLanguage] = useState('fr');
     const [timezone, setTimezone] = useState('Africa/Kinshasa');
-    const [fontSize, setFontSize] = useState('default');
+    const [fontSize, setFontSize] = useState<'small'|'default'|'large'>('default');
     const [highContrast, setHighContrast] = useState(false);
     const [reduceMotion, setReduceMotion] = useState(false);
+    const [savingProfile, setSavingProfile] = useState(false);
 
     const loginHistory = [
         { device: 'Chrome sur Windows', location: 'Kinshasa, RDC', time: 'Il y a 2 heures', icon: 'fab fa-windows' },
@@ -58,9 +62,85 @@ const Settings: React.FC = () => {
         { id: 'danger', label: 'Zone de Danger', icon: 'fas fa-exclamation-triangle' },
     ];
     
-    const handleFormSubmit = (e: React.FormEvent, formType: string) => {
+    const handleFormSubmit = (e: React.FormEvent, _formType: string) => {
         e.preventDefault();
-        alert(`La fonctionnalité de mise à jour pour "${formType}" n'est pas implémentée dans cette démo.`);
+        // neutre: laissé pour les formulaires non utilisés
+    };
+
+    // Hydrater le profil utilisateur dans l'onglet Profil et préférences
+    React.useEffect(() => {
+        if (!profile) return;
+        if (profile.full_name) setName(profile.full_name);
+        if (profile.email) setEmail(profile.email);
+        if (profile.bio !== undefined) setBio(profile.bio || '');
+        if (profile.photo_url) setProfilePic(profile.photo_url);
+        if (profile.email_notifications !== undefined) setEmailNotifications(!!profile.email_notifications);
+        if (profile.daily_summary !== undefined) setDailySummary(!!profile.daily_summary);
+        if (profile.security_alerts !== undefined) setSecurityAlerts(!!profile.security_alerts);
+        if (profile.language) setLanguage(profile.language);
+        if (profile.timezone) setTimezone(profile.timezone);
+        if (profile.font_size) setFontSize(profile.font_size as 'small'|'default'|'large');
+        if (profile.high_contrast !== undefined) setHighContrast(!!profile.high_contrast);
+        if (profile.reduce_motion !== undefined) setReduceMotion(!!profile.reduce_motion);
+    }, [profile]);
+
+    const handleUpdateProfile = async () => {
+        if (!user?.id) {
+            alert('Veuillez vous reconnecter.');
+            return;
+        }
+        setSavingProfile(true);
+        try {
+            await saveUserProfile({
+                full_name: name.trim() || undefined,
+                email: email.trim() || undefined,
+                bio: bio.trim(),
+                photo_url: profilePic,
+            });
+            alert('Profil mis à jour.');
+        } catch (e: any) {
+            console.error(e);
+            alert("Erreur lors de la mise à jour du profil: " + (e?.message || e));
+        } finally {
+            setSavingProfile(false);
+        }
+    };
+
+    const handlePasswordChange = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!password || password !== confirmPassword) {
+            alert('Les mots de passe ne correspondent pas.');
+            return;
+        }
+        if (!user) { alert('Session expirée.'); return; }
+        try {
+            // updatePassword peut exiger une ré-authentification récente
+            // Laisser Firebase renvoyer l’erreur si nécessaire
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            await updatePassword((window as any).firebaseAuthCurrentUser || (null as any) || ({} as any), password);
+        } catch (err: any) {
+            // Fallback: utiliser auth.currentUser si exposé
+            try {
+                // dynamique pour éviter d’importer directement auth ici
+                const { auth } = await import('../lib/firebase');
+                if (auth.currentUser) {
+                    await updatePassword(auth.currentUser, password);
+                } else {
+                    throw err;
+                }
+            } catch (e: any) {
+                console.error(e);
+                if (String(e?.code).includes('requires-recent-login')) {
+                    alert('Pour changer le mot de passe, veuillez vous déconnecter puis vous reconnecter et réessayer.');
+                } else {
+                    alert('Échec du changement de mot de passe: ' + (e?.message || e));
+                }
+                return;
+            }
+        }
+        setPassword('');
+        setConfirmPassword('');
+        alert('Mot de passe mis à jour.');
     };
 
     // Hydrate local state from Firestore settings
@@ -114,6 +194,23 @@ const Settings: React.FC = () => {
         } finally {
             setLogoUploading(false);
             // reset file input value
+            ev.currentTarget.value = '';
+        }
+    };
+
+    const handleAvatarChange: React.ChangeEventHandler<HTMLInputElement> = async (ev) => {
+        if (!ev.target.files || ev.target.files.length === 0) return;
+        const file = ev.target.files[0];
+        if (!file.type.startsWith('image/')) { alert('Veuillez sélectionner une image.'); return; }
+        if (!user?.id) return;
+        try {
+            const url = await uploadAvatar(file);
+            setProfilePic(url);
+            await saveUserProfile({ photo_url: url });
+        } catch (e: any) {
+            console.error(e);
+            alert("Échec de mise à jour de la photo: " + (e?.message || e));
+        } finally {
             ev.currentTarget.value = '';
         }
     };
@@ -236,14 +333,14 @@ const Settings: React.FC = () => {
             case 'profile':
                 return (
                      <SettingsCard title="Paramètres du Profil">
-                        <form onSubmit={(e) => handleFormSubmit(e, 'Profil')} className="p-4 md:p-6">
+                        <form onSubmit={(e) => { e.preventDefault(); handleUpdateProfile(); }} className="p-4 md:p-6">
                             <div className="flex items-center space-x-4 mb-6">
                                 <img src={profilePic} alt="Profile" className="w-20 h-20 rounded-full object-cover" />
                                 <div>
                                     <label htmlFor="file-upload" className="cursor-pointer bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold px-4 py-2 rounded-md hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors text-sm">
                                         Changer la photo
                                     </label>
-                                    <input id="file-upload" name="file-upload" type="file" className="sr-only" onChange={() => alert("Fonctionnalité non implémentée.")}/>
+                                    <input id="file-upload" name="file-upload" type="file" className="sr-only" onChange={handleAvatarChange}/>
                                 </div>
                             </div>
                             <div className="space-y-4">
@@ -260,8 +357,10 @@ const Settings: React.FC = () => {
                                     <textarea id="bio" value={bio} onChange={e => setBio(e.target.value)} rows={3} className={formInputClass} />
                                 </div>
                             </div>
-                             <div className="flex justify-end pt-4 mt-4 border-t dark:border-slate-700">
-                                <button type="submit" className={formButtonClass}>Mettre à jour le profil</button>
+                            <div className="flex justify-end pt-4 mt-4 border-t dark:border-slate-700">
+                                <button type="submit" className={formButtonClass} disabled={savingProfile || userProfileLoading}>
+                                  {savingProfile ? 'Sauvegarde...' : 'Mettre à jour le profil'}
+                                </button>
                             </div>
                         </form>
                     </SettingsCard>
@@ -270,7 +369,7 @@ const Settings: React.FC = () => {
                 return (
                     <div className="space-y-6 md:space-y-8">
                         <SettingsCard title="Changer le mot de passe">
-                            <form onSubmit={(e) => handleFormSubmit(e, 'Mot de passe')} className="space-y-4 p-4 md:p-6">
+                            <form onSubmit={handlePasswordChange} className="space-y-4 p-4 md:p-6">
                                 <div>
                                     <label htmlFor="password" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Nouveau mot de passe</label>
                                     <input type="password" id="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Laisser vide pour ne pas changer" className={formInputClass} />
@@ -319,19 +418,19 @@ const Settings: React.FC = () => {
                             label="Notifications par e-mail"
                             description="Recevez des e-mails pour les annonces importantes."
                             enabled={emailNotifications}
-                            setEnabled={setEmailNotifications}
+                            setEnabled={async (v: boolean) => { setEmailNotifications(v); if (user?.id) { try { await saveUserProfile({ email_notifications: v }); } catch (e) { console.error(e); } } }}
                         />
                          <ToggleSwitch
                             label="Résumé quotidien"
                             description="Recevez un résumé quotidien des activités."
                             enabled={dailySummary}
-                            setEnabled={setDailySummary}
+                            setEnabled={async (v: boolean) => { setDailySummary(v); if (user?.id) { try { await saveUserProfile({ daily_summary: v }); } catch (e) { console.error(e); } } }}
                         />
                          <ToggleSwitch
                             label="Alertes de sécurité"
                             description="Recevez des notifications pour les activités suspectes."
                             enabled={securityAlerts}
-                            setEnabled={setSecurityAlerts}
+                            setEnabled={async (v: boolean) => { setSecurityAlerts(v); if (user?.id) { try { await saveUserProfile({ security_alerts: v }); } catch (e) { console.error(e); } } }}
                         />
                     </SettingsCard>
                 );
@@ -421,7 +520,7 @@ const Settings: React.FC = () => {
             case 'language':
                  return (
                     <SettingsCard title="Langue et Région">
-                         <form onSubmit={(e) => handleFormSubmit(e, 'Langue et Région')} className="space-y-4 p-4 md:p-6">
+                         <form onSubmit={async (e) => { e.preventDefault(); if (user?.id) { try { await saveUserProfile({ language, timezone }); alert('Préférences de langue/région sauvegardées.'); } catch (er) { console.error(er); alert('Erreur lors de la sauvegarde des préférences.'); } } }} className="space-y-4 p-4 md:p-6">
                             <div>
                                 <label htmlFor="language" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Langue</label>
                                 <select id="language" value={language} onChange={e => setLanguage(e.target.value)} className={formInputClass}>
