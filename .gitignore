@@ -12,6 +12,14 @@ dist
 dist-ssr
 *.local
 
+# Local Firebase artifacts and temporary folders
+.firebase/
+tmp_clone/
+tmp_clone_verify/
+tmp_*/
+*.cache
+*.tmp
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
