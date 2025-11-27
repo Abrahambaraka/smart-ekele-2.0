@@ -1,6 +1,7 @@
 
 // Import the functions you need from the SDKs you need
 import { initializeApp, type FirebaseApp } from "firebase/app";
+import { getAnalytics, type Analytics } from "firebase/analytics";
 import { getAuth, type Auth } from "firebase/auth";
 import { getFirestore, type Firestore } from "firebase/firestore";
 import { getStorage, type FirebaseStorage } from "firebase/storage";
@@ -29,6 +30,7 @@ let app: FirebaseApp | null = null;
 let auth: Auth | null = null;
 let db: Firestore | null = null;
 let storage: FirebaseStorage | null = null;
+let analytics: Analytics | null = null;
 
 if (firebaseReady) {
   // Avertissement amical sur storageBucket fréquent
@@ -48,6 +50,20 @@ if (firebaseReady) {
     auth = getAuth(app);
     db = getFirestore(app);
     storage = getStorage(app);
+
+    // Initialize Analytics if available and running in a browser context
+    if (
+      typeof window !== 'undefined' &&
+      typeof firebaseConfig.measurementId === 'string' &&
+      firebaseConfig.measurementId
+    ) {
+      try {
+        analytics = getAnalytics(app);
+      } catch (e: any) {
+        // Fail gracefully if Analytics is not supported (e.g., unsupported env)
+        console.warn('Analytics non pris en charge dans cet environnement:', e?.message || e);
+      }
+    }
   } catch (e: any) {
     console.error('Échec de l\'initialisation Firebase:', e?.message || e);
   }
@@ -61,4 +77,4 @@ if (firebaseReady) {
 }
 
 // Exports (peuvent être nuls si env manquant)
-export { app, auth, db, storage };
+export { app, auth, db, storage, analytics };
