@@ -2,9 +2,10 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { db } from '../lib/firebase';
-import { collection, query, where, getDocs, addDoc, deleteDoc, doc } from 'firebase/firestore';
+import { collection, query, where, getDocs, addDoc, deleteDoc, doc, onSnapshot } from 'firebase/firestore';
 import { ClassLevel } from '../types';
 import { useNavigate } from 'react-router-dom';
+import { useToast } from '../contexts/ToastContext';
 
 interface ClassData {
     id: string;
@@ -18,6 +19,7 @@ interface ClassData {
 const ClassManagement: React.FC = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const toast = useToast();
   const [classes, setClasses] = useState<ClassData[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -26,48 +28,39 @@ const ClassManagement: React.FC = () => {
   const [newClassName, setNewClassName] = useState('');
   const [newClassLevel, setNewClassLevel] = useState<ClassLevel>(ClassLevel.SIXIEME);
 
-  const fetchClasses = async () => {
-      if (!user?.schoolId) return;
-      
-      try {
-          setLoading(true);
-          // Récupérer les classes de l'école
-          const q = query(collection(db, "classes"), where("school_id", "==", user.schoolId));
-          const querySnapshot = await getDocs(q);
-          
-          const fetchedClasses: any[] = [];
-          
-          querySnapshot.forEach((doc) => {
-             fetchedClasses.push({ id: doc.id, ...doc.data() });
-          });
-          
-          // Trier localement (Firestore requires index for orderBy with where clause sometimes)
-          fetchedClasses.sort((a, b) => a.name.localeCompare(b.name));
-
-          // Pour chaque classe, on compte les élèves
-          // Note: C'est coûteux en lecture sur Firestore. Pour optimiser, il faudrait un compteur dans le doc classe.
-          // Ici, on fait une requête simple pour respecter la logique précédente.
-          const classesWithCounts = await Promise.all(fetchedClasses.map(async (cls) => {
-              const qStudents = query(collection(db, "students"), where("class_id", "==", cls.id));
-              const snap = await getDocs(qStudents);
-              return { ...cls, student_count: snap.size };
-          }));
-
-          setClasses(classesWithCounts);
-      } catch (error) {
-          console.error('Erreur chargement classes:', error);
-      } finally {
-          setLoading(false);
-      }
-  };
-
   useEffect(() => {
-      fetchClasses();
+      if (!user?.schoolId) return;
+      setLoading(true);
+      const qClasses = query(collection(db, 'classes'), where('school_id', '==', user.schoolId));
+      const unsubscribe = onSnapshot(qClasses, async (querySnapshot) => {
+          try {
+              const fetchedClasses = querySnapshot.docs.map(d => ({ id: d.id, ...d.data() })) as any[];
+              fetchedClasses.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+              const withCounts = await Promise.all(
+                  fetchedClasses.map(async (cls) => {
+                      const qStudents = query(collection(db, 'students'), where('class_id', '==', cls.id));
+                      const snap = await getDocs(qStudents);
+                      return { ...cls, student_count: snap.size };
+                  })
+              );
+              setClasses(withCounts as ClassData[]);
+          } catch (e: any) {
+              console.error('Erreur chargement classes:', e);
+              toast.error(`Erreur Firestore (classes): ${e?.code || ''} ${e?.message || e}`);
+          } finally {
+              setLoading(false);
+          }
+      }, (err) => {
+          console.error('Snapshot classes error:', err);
+          toast.error(`Erreur Firestore (classes): ${err?.code || ''} ${err?.message || err}`);
+          setLoading(false);
+      });
+      return () => unsubscribe();
   }, [user?.schoolId]);
 
   const handleAddClass = async (e: React.FormEvent) => {
       e.preventDefault();
-      if (!user?.schoolId) return;
+      if (!user?.schoolId) { toast.warning('Votre profil n’est pas lié à une école.'); return; }
 
       try {
           await addDoc(collection(db, "classes"), {
@@ -79,9 +72,10 @@ const ClassManagement: React.FC = () => {
 
           setIsModalOpen(false);
           setNewClassName('');
-          fetchClasses(); // Rafraîchir la liste
+          toast.success('Classe créée avec succès.');
       } catch (error: any) {
-          alert('Erreur lors de la création: ' + error.message);
+          console.error(error);
+          toast.error(`Erreur création classe: ${error?.code || ''} ${error?.message || error}`);
       }
   };
 
@@ -90,9 +84,11 @@ const ClassManagement: React.FC = () => {
 
       try {
           await deleteDoc(doc(db, "classes", id));
-          setClasses(classes.filter(c => c.id !== id));
+          // La liste sera mise à jour par onSnapshot
+          toast.success('Classe supprimée.');
       } catch (error: any) {
-          alert('Erreur suppression: ' + error.message);
+          console.error(error);
+          toast.error(`Erreur suppression: ${error?.code || ''} ${error?.message || error}`);
       }
   };
 
