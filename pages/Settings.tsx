@@ -1,7 +1,8 @@
 
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import ThemeToggle from '../components/ThemeToggle';
+import { useTheme } from '../contexts/ThemeContext';
 import ToggleSwitch from '../components/ToggleSwitch';
 import { db } from '../lib/firebase';
 import { collection, addDoc, writeBatch } from 'firebase/firestore';
@@ -10,9 +11,54 @@ import { ClassLevel, StudentStatus, PaymentStatus } from '../types';
 import { useSchoolSettings } from '../lib/useSchoolSettings';
 import { useUserProfile } from '../lib/useUserProfile';
 import { updatePassword } from 'firebase/auth';
+import { useToast } from '../contexts/ToastContext';
+
+// Constantes statiques hors composant pour éviter leur recréation à chaque frappe
+const SECTIONS = [
+    { id: 'profile', label: 'Profil', icon: 'fas fa-user-circle' },
+    { id: 'security', label: 'Sécurité', icon: 'fas fa-shield-alt' },
+    { id: 'notifications', label: 'Notifications', icon: 'fas fa-bell' },
+    { id: 'appearance', label: 'Apparence', icon: 'fas fa-palette' },
+    { id: 'accessibility', label: 'Accessibilité', icon: 'fas fa-universal-access' },
+    { id: 'language', label: 'Langue et Région', icon: 'fas fa-globe-americas' },
+];
+
+const LOGIN_HISTORY = [
+    { device: 'Chrome sur Windows', location: 'Kinshasa, RDC', time: 'Il y a 2 heures', icon: 'fab fa-windows' },
+    { device: 'iPhone App', location: 'Lubumbashi, RDC', time: 'Hier à 18:45', icon: 'fas fa-mobile-alt' },
+    { device: 'Safari sur MacBook', location: 'Kinshasa, RDC', time: '20 Mai 2024, 09:12', icon: 'fab fa-apple' },
+];
+
+// Composants de présentation mémoïsés pour éviter des re-rendus inutiles
+const SettingsCard: React.FC<{ title: string; children: React.ReactNode }> = React.memo(({ title, children }) => (
+    <div className="bg-white dark:bg-slate-800 rounded-xl shadow-md">
+        <h3 className="text-lg md:text-xl font-semibold p-4 md:p-6 border-b border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100">
+            {title}
+        </h3>
+        <div className="divide-y divide-slate-200 dark:divide-slate-700">
+            {children}
+        </div>
+    </div>
+));
+SettingsCard.displayName = 'SettingsCard';
+
+const SettingRow: React.FC<{ label: string; description: string; children: React.ReactNode }> = React.memo(({ label, description, children }) => (
+    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 space-y-2 sm:space-y-0">
+        <div>
+            <p className="font-medium text-slate-700 dark:text-slate-200">{label}</p>
+            <p className="text-sm text-slate-500 dark:text-slate-400">{description}</p>
+        </div>
+        <div className="flex-shrink-0">
+            {children}
+        </div>
+    </div>
+));
+SettingRow.displayName = 'SettingRow';
 
 const Settings: React.FC = () => {
     const { user } = useAuth();
+    const { theme, setTheme } = useTheme();
+    const toast = useToast();
     const [activeSection, setActiveSection] = useState('profile');
     const [seeding, setSeeding] = useState(false);
     const { settings, loading: settingsLoading, save, uploadLogo } = useSchoolSettings(user?.schoolId);
@@ -44,23 +90,14 @@ const Settings: React.FC = () => {
     const [fontSize, setFontSize] = useState<'small'|'default'|'large'>('default');
     const [highContrast, setHighContrast] = useState(false);
     const [reduceMotion, setReduceMotion] = useState(false);
+    const [twoFAEnabled, setTwoFAEnabled] = useState(false);
     const [savingProfile, setSavingProfile] = useState(false);
 
-    const loginHistory = [
-        { device: 'Chrome sur Windows', location: 'Kinshasa, RDC', time: 'Il y a 2 heures', icon: 'fab fa-windows' },
-        { device: 'iPhone App', location: 'Lubumbashi, RDC', time: 'Hier à 18:45', icon: 'fas fa-mobile-alt' },
-        { device: 'Safari sur MacBook', location: 'Kinshasa, RDC', time: '20 Mai 2024, 09:12', icon: 'fab fa-apple' },
-    ];
-
-    const sections = [
-        { id: 'profile', label: 'Profil', icon: 'fas fa-user-circle' },
-        { id: 'security', label: 'Sécurité', icon: 'fas fa-shield-alt' },
-        { id: 'notifications', label: 'Notifications', icon: 'fas fa-bell' },
-        { id: 'appearance', label: 'Apparence', icon: 'fas fa-palette' },
-        { id: 'accessibility', label: 'Accessibilité', icon: 'fas fa-universal-access' },
-        { id: 'language', label: 'Langue et Région', icon: 'fas fa-globe-americas' },
+    const sections = useMemo(() => ([
+        ...SECTIONS,
         { id: 'danger', label: 'Zone de Danger', icon: 'fas fa-exclamation-triangle' },
-    ];
+        { id: 'school', label: "Établissement", icon: 'fa-solid fa-school' },
+    ]), []);
     
     const handleFormSubmit = (e: React.FormEvent, _formType: string) => {
         e.preventDefault();
@@ -82,11 +119,26 @@ const Settings: React.FC = () => {
         if (profile.font_size) setFontSize(profile.font_size as 'small'|'default'|'large');
         if (profile.high_contrast !== undefined) setHighContrast(!!profile.high_contrast);
         if (profile.reduce_motion !== undefined) setReduceMotion(!!profile.reduce_motion);
-    }, [profile]);
+        if (profile.theme === 'light' || profile.theme === 'dark') {
+            setTheme(profile.theme);
+        }
+        if (typeof profile.high_contrast === 'boolean') {
+            setHighContrast(!!profile.high_contrast);
+        }
+        if (typeof profile.reduce_motion === 'boolean') {
+            setReduceMotion(!!profile.reduce_motion);
+        }
+        if (profile.font_size) {
+            setFontSize(profile.font_size as 'small'|'default'|'large');
+        }
+        if (typeof (profile as any).tfa_enabled === 'boolean') {
+            setTwoFAEnabled(!!(profile as any).tfa_enabled);
+        }
+    }, [profile, setTheme]);
 
     const handleUpdateProfile = async () => {
         if (!user?.id) {
-            alert('Veuillez vous reconnecter.');
+            toast.error('Veuillez vous reconnecter.');
             return;
         }
         setSavingProfile(true);
@@ -97,10 +149,10 @@ const Settings: React.FC = () => {
                 bio: bio.trim(),
                 photo_url: profilePic,
             });
-            alert('Profil mis à jour.');
+            toast.success('Profil mis à jour.');
         } catch (e: any) {
             console.error(e);
-            alert("Erreur lors de la mise à jour du profil: " + (e?.message || e));
+            toast.error("Erreur lors de la mise à jour du profil: " + (e?.message || e));
         } finally {
             setSavingProfile(false);
         }
@@ -109,10 +161,10 @@ const Settings: React.FC = () => {
     const handlePasswordChange = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!password || password !== confirmPassword) {
-            alert('Les mots de passe ne correspondent pas.');
+            toast.warning('Les mots de passe ne correspondent pas.');
             return;
         }
-        if (!user) { alert('Session expirée.'); return; }
+        if (!user) { toast.error('Session expirée.'); return; }
         try {
             // updatePassword peut exiger une ré-authentification récente
             // Laisser Firebase renvoyer l’erreur si nécessaire
@@ -131,31 +183,56 @@ const Settings: React.FC = () => {
             } catch (e: any) {
                 console.error(e);
                 if (String(e?.code).includes('requires-recent-login')) {
-                    alert('Pour changer le mot de passe, veuillez vous déconnecter puis vous reconnecter et réessayer.');
+                    toast.info('Pour changer le mot de passe, veuillez vous déconnecter puis vous reconnecter et réessayer.');
                 } else {
-                    alert('Échec du changement de mot de passe: ' + (e?.message || e));
+                    toast.error('Échec du changement de mot de passe: ' + (e?.message || e));
                 }
                 return;
             }
         }
         setPassword('');
         setConfirmPassword('');
-        alert('Mot de passe mis à jour.');
+        toast.success('Mot de passe mis à jour.');
     };
 
-    // Hydrate local state from Firestore settings
+    // Appliquer Accessibilité & Langue au document (immédiat)
+    React.useEffect(() => {
+        const root = document.documentElement;
+        root.setAttribute('data-font-size', fontSize);
+        root.setAttribute('data-high-contrast', String(highContrast));
+        root.setAttribute('data-reduce-motion', String(reduceMotion));
+    }, [fontSize, highContrast, reduceMotion]);
+
+    React.useEffect(() => {
+        if (language) {
+            document.documentElement.lang = language;
+            localStorage.setItem('lang', language);
+        }
+    }, [language]);
+
+    const handleThemeChange = useCallback(async (next: 'light' | 'dark') => {
+        setTheme(next);
+        try {
+            if (user?.id) await saveUserProfile({ theme: next });
+        } catch (e) {
+            console.error(e);
+        }
+    }, [setTheme, saveUserProfile, user?.id]);
+
+    // Hydrate local state from Firestore settings (éviter d'écraser la saisie en cours)
     React.useEffect(() => {
         if (!settings) return;
-        setSchoolName(settings.display_name || '');
-        setSchoolEmail(settings.email || '');
-        setSchoolPhone(settings.phone || '');
-        setSchoolAddress(settings.address || '');
-        setReceiptFooter(settings.receipt_footer || '');
+        // Hydrater uniquement à la première charge, ou si des champs locaux sont vides
+        setSchoolName(prev => prev || settings.display_name || '');
+        setSchoolEmail(prev => prev || settings.email || '');
+        setSchoolPhone(prev => prev || settings.phone || '');
+        setSchoolAddress(prev => prev || settings.address || '');
+        setReceiptFooter(prev => prev || settings.receipt_footer || '');
     }, [settings]);
 
-    const handleSaveSchool = async () => {
+    const handleSaveSchool = useCallback(async () => {
         if (!user?.id || !user?.schoolId) {
-            alert("Vous devez être connecté pour sauvegarder ces paramètres.");
+            toast.error("Vous devez être connecté pour sauvegarder ces paramètres.");
             return;
         }
         setSavingSettings(true);
@@ -167,20 +244,20 @@ const Settings: React.FC = () => {
                 address: schoolAddress.trim() || undefined,
                 receipt_footer: receiptFooter.trim() || undefined,
             });
-            alert('Paramètres de l\'établissement sauvegardés.');
+            toast.success('Paramètres de l\'établissement sauvegardés.');
         } catch (e: any) {
             console.error(e);
-            alert("Erreur lors de l'enregistrement: " + (e?.message || e));
+            toast.error("Erreur lors de l'enregistrement: " + (e?.message || e));
         } finally {
             setSavingSettings(false);
         }
-    };
+    }, [user?.id, user?.schoolId, save, schoolName, schoolEmail, schoolPhone, schoolAddress, receiptFooter, toast]);
 
     const handleLogoChange: React.ChangeEventHandler<HTMLInputElement> = async (ev) => {
         if (!ev.target.files || ev.target.files.length === 0) return;
         const file = ev.target.files[0];
         if (!file.type.startsWith('image/')) {
-            alert('Veuillez sélectionner une image.');
+            toast.warning('Veuillez sélectionner une image.');
             return;
         }
         if (!user?.id) return;
@@ -188,9 +265,10 @@ const Settings: React.FC = () => {
         try {
             const url = await uploadLogo(file);
             await save(user.id, { logo_url: url });
+            toast.success('Logo mis à jour.');
         } catch (e: any) {
             console.error(e);
-            alert("Échec de téléchargement du logo: " + (e?.message || e));
+            toast.error("Échec de téléchargement du logo: " + (e?.message || e));
         } finally {
             setLogoUploading(false);
             // reset file input value
@@ -201,15 +279,16 @@ const Settings: React.FC = () => {
     const handleAvatarChange: React.ChangeEventHandler<HTMLInputElement> = async (ev) => {
         if (!ev.target.files || ev.target.files.length === 0) return;
         const file = ev.target.files[0];
-        if (!file.type.startsWith('image/')) { alert('Veuillez sélectionner une image.'); return; }
+        if (!file.type.startsWith('image/')) { toast.warning('Veuillez sélectionner une image.'); return; }
         if (!user?.id) return;
         try {
             const url = await uploadAvatar(file);
             setProfilePic(url);
             await saveUserProfile({ photo_url: url });
+            toast.success('Photo de profil mise à jour.');
         } catch (e: any) {
             console.error(e);
-            alert("Échec de mise à jour de la photo: " + (e?.message || e));
+            toast.error("Échec de mise à jour de la photo: " + (e?.message || e));
         } finally {
             ev.currentTarget.value = '';
         }
@@ -217,7 +296,7 @@ const Settings: React.FC = () => {
 
     const handleSeedData = async () => {
         if (!user?.schoolId) {
-            alert("Erreur: Impossible d'identifier votre école.");
+            toast.error("Erreur: Impossible d'identifier votre école.");
             return;
         }
         if (!window.confirm("Ceci va générer des données fictives (Classes, Élèves, Paiements) dans votre base de données actuelle. Continuer ?")) {
@@ -293,37 +372,31 @@ const Settings: React.FC = () => {
                 });
             }
 
-            alert("Données générées avec succès ! Allez voir les autres pages.");
+            toast.success("Données générées avec succès ! Allez voir les autres pages.");
         } catch (error: any) {
             console.error(error);
-            alert("Erreur lors de la génération: " + error.message);
+            toast.error("Erreur lors de la génération: " + error.message);
         } finally {
             setSeeding(false);
         }
     };
 
-    const SettingsCard: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
-        <div className="bg-white dark:bg-slate-800 rounded-xl shadow-md">
-            <h3 className="text-lg md:text-xl font-semibold p-4 md:p-6 border-b border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100">
-                {title}
-            </h3>
-            <div className="divide-y divide-slate-200 dark:divide-slate-700">
-                {children}
-            </div>
-        </div>
-    );
-    
-     const SettingRow: React.FC<{ label: string; description: string; children: React.ReactNode }> = ({ label, description, children }) => (
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 space-y-2 sm:space-y-0">
-            <div>
-                <p className="font-medium text-slate-700 dark:text-slate-200">{label}</p>
-                <p className="text-sm text-slate-500 dark:text-slate-400">{description}</p>
-            </div>
-            <div className="flex-shrink-0">
-                {children}
-            </div>
-        </div>
-    );
+    // Persistance automatique de certaines préférences d'accessibilité
+    React.useEffect(() => {
+        if (!user?.id) return;
+        (async () => {
+            try { await saveUserProfile({ font_size: fontSize }); } catch (e) { console.error(e); }
+        })();
+    }, [fontSize, user?.id, saveUserProfile]);
+
+    React.useEffect(() => {
+        if (!user?.id) return;
+        (async () => {
+            try { await saveUserProfile({ high_contrast: highContrast }); } catch (e) { console.error(e); }
+        })();
+    }, [highContrast, user?.id, saveUserProfile]);
+
+    // Les composants SettingsCard/SettingRow ont été déplacés hors du composant et mémoïsés
 
     const renderContent = () => {
         const formInputClass = "w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-primary dark:focus:ring-offset-slate-800 focus:border-brand-primary dark:bg-slate-700 dark:border-slate-600 dark:text-white";
@@ -385,15 +458,18 @@ const Settings: React.FC = () => {
                         </SettingsCard>
                          <SettingsCard title="Authentification à deux facteurs (2FA)">
                            <ToggleSwitch
-                                label="Activer la 2FA"
-                                description="Renforcez la sécurité de votre compte."
-                                enabled={tfaEnabled}
-                                setEnabled={setTfaEnabled}
+                                label="Activer la 2FA (préférence)"
+                                description="Enregistre votre préférence. Pour une 2FA réelle (MFA Firebase), une étape d'inscription par code/app sera ajoutée ultérieurement."
+                                enabled={twoFAEnabled}
+                                setEnabled={async (v:boolean)=>{
+                                    setTwoFAEnabled(v);
+                                    if(user?.id){ try{ await saveUserProfile({ /* @ts-ignore */ tfa_enabled: v }); } catch(e){ console.error(e);} }
+                                }}
                            />
                         </SettingsCard>
                         <SettingsCard title="Historique de connexion">
                            <div className="p-4 md:p-6 space-y-4">
-                             {loginHistory.map((session, index) => (
+                             {LOGIN_HISTORY.map((session, index) => (
                                <div key={index} className="flex items-center">
                                  <i className={`${session.icon} text-2xl text-slate-400 w-8 text-center`}></i>
                                  <div className="ml-4 flex-grow">
@@ -404,10 +480,10 @@ const Settings: React.FC = () => {
                              ))}
                            </div>
                            <div className="p-4 md:p-6 border-t dark:border-slate-700 flex justify-end">
-                                <button onClick={() => alert("Déconnecté de tous les autres appareils.")} className="text-sm font-semibold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-700 px-4 py-2 rounded-md hover:bg-slate-200 dark:hover:bg-slate-600 transition">
+                                <button onClick={() => toast.info("Déconnecté de tous les autres appareils.")} className="text-sm font-semibold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-700 px-4 py-2 rounded-md hover:bg-slate-200 dark:hover:bg-slate-600 transition">
                                     Se déconnecter de partout
                                 </button>
-                           </div>
+                             </div>
                         </SettingsCard>
                     </div>
                 );
@@ -438,7 +514,11 @@ const Settings: React.FC = () => {
                 return (
                     <SettingsCard title="Apparence">
                         <SettingRow label="Thème de l'application" description="Choisissez entre clair et sombre.">
-                             <ThemeToggle />
+                            <div className="flex items-center space-x-3">
+                                <button onClick={()=>handleThemeChange('light')} className={`px-3 py-2 rounded-md text-sm border ${theme==='light'?'bg-slate-200 dark:bg-slate-700 font-semibold':''}`}>Clair</button>
+                                <button onClick={()=>handleThemeChange('dark')} className={`px-3 py-2 rounded-md text-sm border ${theme==='dark'?'bg-slate-200 dark:bg-slate-700 font-semibold':''}`}>Sombre</button>
+                                <div className="ml-2"><ThemeToggle /></div>
+                            </div>
                         </SettingRow>
                     </SettingsCard>
                 );
@@ -513,14 +593,14 @@ const Settings: React.FC = () => {
                             label="Réduire les animations"
                             description="Désactive les animations décoratives."
                             enabled={reduceMotion}
-                            setEnabled={setReduceMotion}
+                            setEnabled={async (v:boolean)=>{ setReduceMotion(v); if(user?.id){ try{ await saveUserProfile({ reduce_motion: v }); } catch(e){ console.error(e);} } }}
                         />
                     </SettingsCard>
                 );
             case 'language':
                  return (
                     <SettingsCard title="Langue et Région">
-                         <form onSubmit={async (e) => { e.preventDefault(); if (user?.id) { try { await saveUserProfile({ language, timezone }); alert('Préférences de langue/région sauvegardées.'); } catch (er) { console.error(er); alert('Erreur lors de la sauvegarde des préférences.'); } } }} className="space-y-4 p-4 md:p-6">
+                         <form onSubmit={async (e) => { e.preventDefault(); if (user?.id) { try { await saveUserProfile({ language, timezone }); toast.success('Préférences de langue/région sauvegardées.'); } catch (er) { console.error(er); toast.error('Erreur lors de la sauvegarde des préférences.'); } } }} className="space-y-4 p-4 md:p-6">
                             <div>
                                 <label htmlFor="language" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Langue</label>
                                 <select id="language" value={language} onChange={e => setLanguage(e.target.value)} className={formInputClass}>
@@ -577,10 +657,7 @@ const Settings: React.FC = () => {
             <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 md:gap-8">
                 <div className="lg:col-span-1">
                     <div className="space-y-1 bg-white dark:bg-slate-800 p-2 rounded-xl shadow-md sticky top-24">
-                        {[
-                            ...sections,
-                            { id: 'school', label: "Établissement", icon: 'fa-solid fa-school' },
-                        ].map(section => (
+                        {sections.map(section => (
                             <button
                                 key={section.id}
                                 onClick={() => setActiveSection(section.id)}

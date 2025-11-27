@@ -3,6 +3,7 @@ import React from 'react';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ThemeProvider } from './contexts/ThemeContext';
+import { ToastProvider } from './contexts/ToastContext';
 import { Role } from './types';
 import ProtectedRoute from './components/ProtectedRoute';
 import Layout from './components/Layout';
@@ -24,9 +25,11 @@ const App: React.FC = () => {
   return (
     <AuthProvider>
       <ThemeProvider>
-        <HashRouter>
-          <AppRoutes />
-        </HashRouter>
+        <ToastProvider>
+          <HashRouter>
+            <AppRoutes />
+          </HashRouter>
+        </ToastProvider>
       </ThemeProvider>
     </AuthProvider>
   );
