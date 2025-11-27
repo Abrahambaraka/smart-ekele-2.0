@@ -1,5 +1,6 @@
 {
   "hosting": {
+    "site": "smart-ekele",
     "public": "dist",
     "ignore": [
       "firebase.json",

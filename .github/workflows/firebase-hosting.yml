@@ -1,8 +1,15 @@
 name: DEPRECATED — Use .github/workflows/firebase-hosting-deploy.yml
 
 on:
-  # This workflow is intentionally disabled to avoid duplicate deploys.
-  # Kept only for history/reference. It will never trigger by itself.
+  # Ce workflow est conservé uniquement pour l'historique.
+  # Il ne doit jamais être déclenché directement.
+  # L'événement workflow_call exige au moins un job valide,
+  # donc on fournit un job no-op toujours ignoré.
   workflow_call:
 
-jobs: {}
+jobs:
+  noop:
+    if: false
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Deprecated workflow. Use .github/workflows/firebase-hosting-deploy.yml"
