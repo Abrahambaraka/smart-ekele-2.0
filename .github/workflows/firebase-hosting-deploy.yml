@@ -75,6 +75,32 @@ jobs:
             echo "✅ Fichier .env généré depuis les Secrets."
           fi
 
+      - name: Inspect .env (présence des clés uniquement)
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "🔎 Vérification des variables Vite présentes dans .env:"
+          for key in \
+            VITE_FIREBASE_API_KEY \
+            VITE_FIREBASE_AUTH_DOMAIN \
+            VITE_FIREBASE_PROJECT_ID \
+            VITE_FIREBASE_STORAGE_BUCKET \
+            VITE_FIREBASE_MESSAGING_SENDER_ID \
+            VITE_FIREBASE_APP_ID \
+            VITE_FIREBASE_MEASUREMENT_ID
+          do
+            if grep -q "^${key}=" .env; then
+              val=$(grep -E "^${key}=" .env | sed -e "s/^${key}=//") || true
+              if [ -n "${val}" ]; then
+                echo "✅ ${key}=<set>"
+              else
+                echo "⚠️ ${key}=<empty>"
+              fi
+            else
+              echo "❌ ${key}=<absent>"
+            fi
+          done
+
       - name: Install dependencies
         run: npm ci
 
