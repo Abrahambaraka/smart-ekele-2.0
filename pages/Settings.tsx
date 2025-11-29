@@ -4,7 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import ThemeToggle from '../components/ThemeToggle';
 import { useTheme } from '../contexts/ThemeContext';
 import ToggleSwitch from '../components/ToggleSwitch';
-import { db } from '../lib/firebase';
+import { db, auth } from '../lib/firebase';
 import { collection, addDoc, writeBatch } from 'firebase/firestore';
 import { MOCK_CLASSES, MOCK_STUDENTS, MOCK_PAYMENTS } from '../constants';
 import { ClassLevel, StudentStatus, PaymentStatus } from '../types';
@@ -171,11 +171,9 @@ const Settings: React.FC = () => {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             await updatePassword((window as any).firebaseAuthCurrentUser || (null as any) || ({} as any), password);
         } catch (err: any) {
-            // Fallback: utiliser auth.currentUser si exposé
+            // Fallback: utiliser auth.currentUser si exposé (import statique)
             try {
-                // dynamique pour éviter d’importer directement auth ici
-                const { auth } = await import('../lib/firebase');
-                if (auth.currentUser) {
+                if (auth?.currentUser) {
                     await updatePassword(auth.currentUser, password);
                 } else {
                     throw err;

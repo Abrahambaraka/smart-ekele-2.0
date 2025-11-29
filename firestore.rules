@@ -1,0 +1,52 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function belongsToSchool(schoolId) {
+      return request.auth != null &&
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.school_id == schoolId;
+    }
+
+    function isDirector() {
+      return request.auth != null &&
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'school_director';
+    }
+
+    // SCHOOLS
+    match /schools/{schoolId} {
+      allow read: if belongsToSchool(schoolId);
+      allow create: if request.auth != null;
+    }
+
+    // USERS
+    match /users/{userId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth.uid == userId;
+    }
+
+    // INVITES
+    match /invites/{inviteId} {
+      allow read: if true;
+      allow write: if isDirector() && belongsToSchool(request.resource.data.school_id);
+      allow delete: if request.auth != null;
+    }
+
+    // CLASSES
+    match /classes/{classId} {
+      allow read: if belongsToSchool(resource.data.school_id);
+      allow write: if isDirector() && belongsToSchool(request.resource.data.school_id);
+    }
+
+    // STUDENTS
+    match /students/{studentId} {
+      allow read: if belongsToSchool(resource.data.school_id);
+      allow write: if isDirector() && belongsToSchool(request.resource.data.school_id);
+    }
+
+    // PAYMENTS
+    match /payments/{paymentId} {
+      allow read: if belongsToSchool(resource.data.school_id);
+      allow write: if isDirector() && belongsToSchool(request.resource.data.school_id);
+    }
+  }
+}
