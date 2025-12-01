@@ -8,6 +8,11 @@ on:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+    env:
+      # Expose selected secrets as environment variables to allow safe reference in `if:` expressions
+      FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+      FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     steps:
       - name: Checkout repository
@@ -108,21 +113,21 @@ jobs:
         run: npm run build
 
       - name: Deploy to Firebase Hosting (Service Account)
-        if: ${{ secrets.FIREBASE_SERVICE_ACCOUNT != '' }}
+        if: ${{ env.FIREBASE_SERVICE_ACCOUNT != '' }}
         uses: FirebaseExtended/action-hosting-deploy@v0
         with:
-          repoToken: ${{ secrets.GITHUB_TOKEN }}
-          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          repoToken: ${{ env.GITHUB_TOKEN }}
+          firebaseServiceAccount: ${{ env.FIREBASE_SERVICE_ACCOUNT }}
           projectId: smart-ekele
 
       - name: Deploy to Firebase Hosting (CLI token fallback)
-        if: ${{ secrets.FIREBASE_SERVICE_ACCOUNT == '' && secrets.FIREBASE_TOKEN != '' }}
-        run: npx firebase-tools deploy --project smart-ekele --only hosting --token "${{ secrets.FIREBASE_TOKEN }}"
+        if: ${{ env.FIREBASE_SERVICE_ACCOUNT == '' && env.FIREBASE_TOKEN != '' }}
+        run: npx firebase-tools deploy --project smart-ekele --only hosting --token "${{ env.FIREBASE_TOKEN }}"
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ""
 
       - name: Fail deploy (no auth configured)
-        if: ${{ secrets.FIREBASE_SERVICE_ACCOUNT == '' && (secrets.FIREBASE_TOKEN == '' || secrets.FIREBASE_TOKEN == null) }}
+        if: ${{ env.FIREBASE_SERVICE_ACCOUNT == '' && (env.FIREBASE_TOKEN == '' || env.FIREBASE_TOKEN == null) }}
         shell: bash
         run: |
           echo "❌ Aucun moyen d'authentification Firebase n'est configuré pour le déploiement." >&2
