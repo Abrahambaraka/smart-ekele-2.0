@@ -164,14 +164,27 @@ const ClassManagement: React.FC = () => {
                         </div>
                         <div className="mb-4">
                             <label className="block text-sm mb-1">Niveau</label>
-                            <select 
+                            <select
                                 value={newClassLevel}
                                 onChange={e => setNewClassLevel(e.target.value as ClassLevel)}
                                 className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600"
                             >
-                                {Object.values(ClassLevel).map(lvl => (
-                                    <option key={lvl} value={lvl}>{lvl}</option>
-                                ))}
+                                <optgroup label="Cycle Primaire">
+                                    <option value={ClassLevel.PRIMAIRE_1ERE}>1ère</option>
+                                    <option value={ClassLevel.PRIMAIRE_2EME}>2ème</option>
+                                    <option value={ClassLevel.PRIMAIRE_3EME}>3ème</option>
+                                    <option value={ClassLevel.PRIMAIRE_4EME}>4ème</option>
+                                    <option value={ClassLevel.PRIMAIRE_5EME}>5ème</option>
+                                    <option value={ClassLevel.PRIMAIRE_6EME}>6ème</option>
+                                </optgroup>
+                                <optgroup label="Cycle Secondaire">
+                                    <option value={ClassLevel.SECONDAIRE_7EB}>7ème EB</option>
+                                    <option value={ClassLevel.SECONDAIRE_8EB}>8ème EB</option>
+                                    <option value={ClassLevel.SECONDAIRE_1}>1ère</option>
+                                    <option value={ClassLevel.SECONDAIRE_2}>2ème</option>
+                                    <option value={ClassLevel.SECONDAIRE_3}>3ème</option>
+                                    <option value={ClassLevel.SECONDAIRE_4}>4ème</option>
+                                </optgroup>
                             </select>
                         </div>
                         <div className="flex justify-end gap-2">
