@@ -5,6 +5,8 @@ import { db } from '../lib/firebase';
 import { collection, query, where, getDocs, addDoc } from 'firebase/firestore';
 import { PaymentStatus } from '../types';
 import { useSchoolSettings } from '../lib/useSchoolSettings';
+import { useToast } from '../contexts/ToastContext';
+import PaymentModalComponent from '../components/PaymentModal';
 
 interface PaymentData {
     id: string;
@@ -27,10 +29,12 @@ interface StudentOption {
 
 const PaymentManagement: React.FC = () => {
     const { user } = useAuth();
+    const toast = useToast();
     const { settings } = useSchoolSettings(user?.schoolId);
     const [payments, setPayments] = useState<PaymentData[]>([]);
     const [loading, setLoading] = useState(true);
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [formErrors, setFormErrors] = useState<Record<string, string>>({});
 
     // Filter state
     const [filterStatus, setFilterStatus] = useState('all');
@@ -159,8 +163,22 @@ const PaymentManagement: React.FC = () => {
 
     const handleSubmit = async (e: FormEvent) => {
         e.preventDefault();
-        if (!selectedStudentId || !amount || parseFloat(amount) <= 0 || !user?.schoolId) {
-            alert("Veuillez vérifier les informations.");
+        setFormErrors({});
+
+        // Validation immédiate
+        const errors: Record<string, string> = {};
+
+        if (!selectedStudentId) errors.student = 'Veuillez sélectionner un étudiant.';
+        if (!amount || parseFloat(amount) <= 0) errors.amount = 'Le montant doit être supérieur à 0.';
+        if (!dueDate) errors.dueDate = 'La date d\'échéance est requise.';
+
+        if (Object.keys(errors).length > 0) {
+            setFormErrors(errors);
+            return;
+        }
+
+        if (!user?.schoolId) {
+            toast.warning('Votre profil n\'est pas lié à une école.');
             return;
         }
         
@@ -181,15 +199,17 @@ const PaymentManagement: React.FC = () => {
                 status: selectedStatus,
                 description: description,
                 school_id: user.schoolId,
-                student_name: selectedStudentName, // Denormalization
+                student_name: selectedStudentName,
                 class_name: selectedStudentClass,
                 created_at: new Date().toISOString()
             });
 
+            toast.success('Paiement enregistré avec succès.');
             setIsModalOpen(false);
+            resetForm();
             fetchPayments();
         } catch (error: any) {
-             alert("Erreur: " + error.message);
+            toast.error(`Erreur: ${error?.message || 'Une erreur est survenue'}`);
         }
     };
 
@@ -311,94 +331,13 @@ const PaymentManagement: React.FC = () => {
         }
     }
 
-
-    const PaymentModal = () => (
-        <div className="fixed inset-0 bg-black bg-opacity-50 z-40 flex justify-center items-center p-4 backdrop-blur-sm animate-fade-in">
-            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl p-4 sm:p-6 w-full max-w-lg m-4 transform transition-all animate-scale-in">
-                <div className="flex justify-between items-center border-b pb-3 mb-4 dark:border-slate-700">
-                    <h3 className="text-lg md:text-xl font-semibold text-slate-800 dark:text-slate-100">Nouveau paiement</h3>
-                    <button onClick={() => setIsModalOpen(false)} className="text-slate-500 hover:text-slate-800"><i className="fas fa-times h-6 w-6"></i></button>
-                </div>
-                <form onSubmit={handleSubmit}>
-                    <div className="space-y-3 sm:space-y-4 max-h-[70vh] overflow-y-auto pr-2">
-                        <div>
-                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Étudiant</label>
-                            <div className="relative" ref={searchContainerRef}>
-                                <input
-                                    type="text"
-                                    value={studentSearchTerm}
-                                    onChange={(e) => {
-                                        setStudentSearchTerm(e.target.value);
-                                        if (!isStudentDropdownOpen) setIsStudentDropdownOpen(true);
-                                    }}
-                                    onFocus={() => setIsStudentDropdownOpen(true)}
-                                    placeholder="Rechercher un étudiant..."
-                                    className="w-full px-3 py-2 border border-slate-300 rounded-md dark:bg-slate-700 dark:border-slate-600 dark:text-white"
-                                />
-                                {isStudentDropdownOpen && studentOptions.length > 0 && (
-                                    <div className="absolute z-10 w-full mt-1 bg-white dark:bg-slate-700 border rounded-md shadow-lg max-h-48 overflow-y-auto">
-                                        {studentOptions.map(student => (
-                                            <div
-                                                key={student.id}
-                                                onClick={() => {
-                                                    setSelectedStudentId(student.id);
-                                                    setSelectedStudentName(student.name);
-                                                    setSelectedStudentClass(student.classes?.name || '');
-                                                    setStudentSearchTerm(student.name);
-                                                    setIsStudentDropdownOpen(false);
-                                                }}
-                                                className="px-4 py-2 text-sm hover:bg-primary-500 hover:text-white cursor-pointer dark:text-slate-200"
-                                            >
-                                                {student.name} ({student.classes?.name})
-                                            </div>
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                         <div>
-                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Classe</label>
-                            <input type="text" value={selectedStudentClass} readOnly disabled className="w-full px-3 py-2 border rounded-md bg-slate-100 dark:bg-slate-600 dark:text-slate-300" />
-                        </div>
-
-                        <div>
-                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Motif</label>
-                            <select value={paymentReason} onChange={(e) => setPaymentReason(e.target.value)} className="w-full px-3 py-2 border rounded-md dark:bg-slate-700 dark:border-slate-600 dark:text-white">
-                                <option value="frais_scolaire">Paiement Frais Scolaire</option>
-                                <option value="inscription">Inscription</option>
-                                <option value="frais_etat">Frais de l'état</option>
-                                <option value="frais_examen">Frais d'examen</option>
-                            </select>
-                        </div>
-
-                        {paymentReason === 'frais_scolaire' && (
-                            <div>
-                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Mois</label>
-                                <select value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className="w-full px-3 py-2 border rounded-md dark:bg-slate-700 dark:border-slate-600 dark:text-white">
-                                    {['septembre', 'octobre', 'novembre', 'decembre', 'janvier', 'fevrier', 'mars', 'avril', 'mai', 'juin'].map(m => <option key={m} value={m}>{m}</option>)}
-                                </select>
-                            </div>
-                        )}
-                        
-                        <div>
-                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Montant ($)</label>
-                            <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} min="0" step="0.01" className="w-full px-3 py-2 border rounded-md dark:bg-slate-700 dark:border-slate-600 dark:text-white" />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Statut</label>
-                            <select value={selectedStatus} onChange={(e) => setSelectedStatus(e.target.value as PaymentStatus)} className="w-full px-3 py-2 border rounded-md dark:bg-slate-700 dark:border-slate-600 dark:text-white">
-                                {Object.values(PaymentStatus).map(s => <option key={s} value={s}>{s}</option>)}
-                            </select>
-                        </div>
-                    </div>
-                    <div className="mt-6 flex justify-end space-x-4 border-t pt-4 dark:border-slate-700">
-                        <button type="button" onClick={() => setIsModalOpen(false)} className="px-4 py-2 bg-slate-200 rounded-md">Annuler</button>
-                        <button type="submit" className="px-4 py-2 bg-brand-primary text-white rounded-md">Ajouter</button>
-                    </div>
-                </form>
-            </div>
-        </div>
-    );
+    const handleStudentSelect = (student: StudentOption) => {
+        setSelectedStudentId(student.id);
+        setSelectedStudentName(student.name);
+        setSelectedStudentClass(student.classes?.name || '');
+        setStudentSearchTerm(student.name);
+        setIsStudentDropdownOpen(false);
+    };
 
     return (
         <div className="container mx-auto">
@@ -455,7 +394,27 @@ const PaymentManagement: React.FC = () => {
                     </div>
                 )}
             </div>
-            {isModalOpen && <PaymentModal />}
+            <PaymentModalComponent
+                isOpen={isModalOpen}
+                studentSearchTerm={studentSearchTerm}
+                studentOptions={studentOptions}
+                isStudentDropdownOpen={isStudentDropdownOpen}
+                selectedStudentClass={selectedStudentClass}
+                paymentReason={paymentReason}
+                selectedMonth={selectedMonth}
+                amount={amount}
+                selectedStatus={selectedStatus}
+                formErrors={formErrors}
+                onStudentSearchChange={setStudentSearchTerm}
+                onDropdownOpenChange={setIsStudentDropdownOpen}
+                onStudentSelect={handleStudentSelect}
+                onPaymentReasonChange={setPaymentReason}
+                onMonthChange={setSelectedMonth}
+                onAmountChange={setAmount}
+                onStatusChange={setSelectedStatus}
+                onSubmit={handleSubmit}
+                onClose={() => setIsModalOpen(false)}
+            />
         </div>
     );
 };

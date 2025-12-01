@@ -26,7 +26,7 @@ const ClassManagement: React.FC = () => {
   
   // Form state
   const [newClassName, setNewClassName] = useState('');
-  const [newClassLevel, setNewClassLevel] = useState<ClassLevel>(ClassLevel.SIXIEME);
+  const [newClassLevel, setNewClassLevel] = useState<ClassLevel>(ClassLevel.PRIMAIRE_1ERE);
 
   useEffect(() => {
       if (!user?.schoolId) return;

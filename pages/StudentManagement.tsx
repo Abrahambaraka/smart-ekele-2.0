@@ -1,11 +1,13 @@
 
-import React, { useState, FormEvent, useEffect } from 'react';
+import React, { useState, FormEvent, useEffect, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { db } from '../lib/firebase';
 import { collection, query, where, getDocs, addDoc, updateDoc, deleteDoc, doc } from 'firebase/firestore';
 import { StudentStatus } from '../types';
 import { useLocation } from 'react-router-dom';
 import { studentSchema, type StudentForm } from '../lib/validation';
+import { useToast } from '../contexts/ToastContext';
+import StudentModalComponent from '../components/StudentModal';
 
 interface StudentData {
     id: string;
@@ -176,14 +178,31 @@ const StudentManagement: React.FC = () => {
 
     const handleSubmit = async (e: FormEvent) => {
         e.preventDefault();
-        if (!user?.schoolId) return;
+        if (!user?.schoolId) {
+            toast.warning('Votre profil n\'est pas lié à une école.');
+            return;
+        }
 
         setIsSubmitting(true);
         setFormErrors({});
 
+        // Validation immédiate
+        const errors: Partial<Record<keyof StudentForm, string>> = {};
+        
+        if (!newStudentName.trim()) errors.name = 'Le nom de l\'étudiant est requis';
+        if (newStudentName.trim().length < 2) errors.name = 'Le nom doit contenir au moins 2 caractères';
+        if (!selectedClassId) errors.class_id = 'Veuillez sélectionner une classe';
+        if (!enrollmentDate) errors.enrollment_date = 'La date d\'inscription est requise';
+
+        if (Object.keys(errors).length > 0) {
+            setFormErrors(errors);
+            setIsSubmitting(false);
+            return;
+        }
+
         const payload: StudentForm & { school_id: string } = {
             name: newStudentName.trim(),
-            class_id: (selectedClassId === '' ? '' : selectedClassId).toString(),
+            class_id: selectedClassId.toString(),
             enrollment_date: enrollmentDate,
             status: selectedStatus,
             phone_number: studentPhoneNumber ? studentPhoneNumber.trim() : undefined,
@@ -192,7 +211,7 @@ const StudentManagement: React.FC = () => {
             school_id: user.schoolId,
         };
 
-        // Validation Zod
+        // Validation Zod complète
         const parsed = studentSchema.safeParse(payload);
         if (!parsed.success) {
             const fieldErrors: Partial<Record<keyof StudentForm, string>> = {};
@@ -205,7 +224,6 @@ const StudentManagement: React.FC = () => {
             return;
         }
 
-        // Adapter class_id null si vide
         const studentPayload = {
             ...parsed.data,
             class_id: parsed.data.class_id === '' ? null : parsed.data.class_id,
@@ -216,146 +234,22 @@ const StudentManagement: React.FC = () => {
             if (editingStudent) {
                 const studentRef = doc(db, "students", editingStudent.id);
                 await updateDoc(studentRef, studentPayload);
+                toast.success('Étudiant modifié avec succès.');
             } else {
                 await addDoc(collection(db, "students"), {
                     ...studentPayload,
                     created_at: new Date().toISOString()
                 });
+                toast.success('Étudiant inscrit avec succès.');
             }
             handleCloseModal();
             fetchStudents();
         } catch (error: any) {
-            // Affiche une erreur de formulaire générale en haut du modal (optionnel)
-            setFormErrors(prev => ({ ...prev, name: prev.name, class_id: prev.class_id }));
-            alert("Erreur: " + error.message);
+            toast.error(`Erreur: ${error?.message || 'Une erreur est survenue'}`);
         } finally {
             setIsSubmitting(false);
         }
     };
-
-    const StudentModal = () => (
-        <div className="fixed inset-0 bg-black bg-opacity-50 z-40 flex justify-center items-center p-4 backdrop-blur-sm animate-fade-in" aria-modal="true" role="dialog">
-            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl p-4 sm:p-6 w-full max-w-lg m-4 transform transition-all animate-scale-in">
-                <div className="flex justify-between items-center border-b pb-3 mb-4 dark:border-slate-700">
-                    <h3 className="text-lg md:text-xl font-semibold text-slate-800 dark:text-slate-100">
-                        {editingStudent ? "Modifier l'étudiant" : "Inscrire un nouvel étudiant"}
-                    </h3>
-                    <button onClick={handleCloseModal} className="text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 transition-colors" aria-label="Close modal">
-                        <i className="fas fa-times h-6 w-6"></i>
-                    </button>
-                </div>
-                <form onSubmit={handleSubmit} className="max-h-[70vh] overflow-y-auto pr-2">
-                    <div className="space-y-3 sm:space-y-4">
-                        <div>
-                            <label htmlFor="studentName" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Nom de l'étudiant</label>
-                            <input
-                              type="text"
-                              id="studentName"
-                              value={newStudentName}
-                              onChange={(e) => setNewStudentName(e.target.value)}
-                              aria-invalid={!!formErrors.name}
-                              aria-describedby={formErrors.name ? 'studentName-error' : undefined}
-                              required
-                              className={`w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 dark:bg-slate-700 dark:border-slate-600 dark:text-white ${formErrors.name ? 'border-red-500' : 'border-slate-300'}`}
-                            />
-                            {formErrors.name && <p id="studentName-error" className="mt-1 text-sm text-red-600 dark:text-red-400">{formErrors.name}</p>}
-                        </div>
-                        <div>
-                            <label htmlFor="classId" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Classe</label>
-                            <select
-                              id="classId"
-                              value={selectedClassId}
-                              onChange={(e) => setSelectedClassId(e.target.value)}
-                              aria-invalid={!!formErrors.class_id}
-                              aria-describedby={formErrors.class_id ? 'classId-error' : undefined}
-                              required
-                              className={`w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 dark:bg-slate-700 dark:border-slate-600 dark:text-white ${formErrors.class_id ? 'border-red-500' : 'border-slate-300'}`}
-                            >
-                                <option value="" disabled>Choisir une classe</option>
-                                {classes.map(cls => (
-                                    <option key={cls.id} value={cls.id}>{cls.name}</option>
-                                ))}
-                            </select>
-                            {formErrors.class_id && <p id="classId-error" className="mt-1 text-sm text-red-600 dark:text-red-400">{formErrors.class_id}</p>}
-                        </div>
-                        <div>
-                            <label htmlFor="status" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Statut</label>
-                            <select
-                              id="status"
-                              value={selectedStatus}
-                              onChange={(e) => setSelectedStatus(e.target.value as StudentStatus)}
-                              aria-invalid={!!formErrors.status}
-                              aria-describedby={formErrors.status ? 'status-error' : undefined}
-                              required
-                              className={`w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 dark:bg-slate-700 dark:border-slate-600 dark:text-white ${formErrors.status ? 'border-red-500' : 'border-slate-300'}`}
-                            >
-                                {Object.values(StudentStatus).map(status => (
-                                    <option key={status} value={status}>{status}</option>
-                                ))}
-                            </select>
-                            {formErrors.status && <p id="status-error" className="mt-1 text-sm text-red-600 dark:text-red-400">{formErrors.status}</p>}
-                        </div>
-                        <div>
-                            <label htmlFor="studentPhoneNumber" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Téléphone (Étudiant)</label>
-                            <input
-                              type="tel"
-                              id="studentPhoneNumber"
-                              value={studentPhoneNumber}
-                              onChange={(e) => setStudentPhoneNumber(e.target.value)}
-                              aria-invalid={!!formErrors.phone_number}
-                              aria-describedby={formErrors.phone_number ? 'studentPhone-error' : undefined}
-                              className={`w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 dark:bg-slate-700 dark:border-slate-600 dark:text-white ${formErrors.phone_number ? 'border-red-500' : 'border-slate-300'}`}
-                            />
-                            {formErrors.phone_number && <p id="studentPhone-error" className="mt-1 text-sm text-red-600 dark:text-red-400">{formErrors.phone_number}</p>}
-                        </div>
-                        <div>
-                            <label htmlFor="parentPhoneNumber" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Numéro du parent</label>
-                            <input
-                              type="tel"
-                              id="parentPhoneNumber"
-                              value={parentPhoneNumber}
-                              onChange={(e) => setParentPhoneNumber(e.target.value)}
-                              aria-invalid={!!formErrors.parent_phone_number}
-                              aria-describedby={formErrors.parent_phone_number ? 'parentPhone-error' : undefined}
-                              className={`w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 dark:bg-slate-700 dark:border-slate-600 dark:text-white ${formErrors.parent_phone_number ? 'border-red-500' : 'border-slate-300'}`}
-                            />
-                            {formErrors.parent_phone_number && <p id="parentPhone-error" className="mt-1 text-sm text-red-600 dark:text-red-400">{formErrors.parent_phone_number}</p>}
-                        </div>
-                         <div>
-                            <label htmlFor="parentAddress" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Adresse du parent</label>
-                            <input
-                              type="text"
-                              id="parentAddress"
-                              value={parentAddress}
-                              onChange={(e) => setParentAddress(e.target.value)}
-                              className="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 dark:bg-slate-700 dark:border-slate-600 dark:text-white"
-                            />
-                        </div>
-                        <div>
-                            <label htmlFor="enrollmentDate" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Date d'inscription</label>
-                            <input
-                              type="date"
-                              id="enrollmentDate"
-                              value={enrollmentDate}
-                              onChange={(e) => setEnrollmentDate(e.target.value)}
-                              aria-invalid={!!formErrors.enrollment_date}
-                              aria-describedby={formErrors.enrollment_date ? 'enrollment-error' : undefined}
-                              required
-                              className={`w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 dark:bg-slate-700 dark:border-slate-600 dark:text-white ${formErrors.enrollment_date ? 'border-red-500' : 'border-slate-300'}`}
-                            />
-                            {formErrors.enrollment_date && <p id="enrollment-error" className="mt-1 text-sm text-red-600 dark:text-red-400">{formErrors.enrollment_date}</p>}
-                        </div>
-                    </div>
-                    <div className="mt-6 flex justify-end space-x-4 border-t pt-4 dark:border-slate-700">
-                        <button type="button" onClick={handleCloseModal} className="px-4 py-2 bg-slate-200 text-slate-800 rounded-md hover:bg-slate-300 dark:bg-slate-600 dark:text-slate-200 dark:hover:bg-slate-500 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-400 dark:focus:ring-offset-gray-800">Annuler</button>
-                        <button type="submit" disabled={isSubmitting} className={`px-4 py-2 bg-brand-primary text-white rounded-md hover:bg-brand-secondary focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-primary dark:focus:ring-offset-gray-800 transition-colors shadow-md hover:shadow-lg ${isSubmitting ? 'opacity-50 cursor-not-allowed' : ''}`}>
-                            {isSubmitting ? 'Traitement...' : editingStudent ? 'Sauvegarder' : 'Inscrire'}
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </div>
-    );
 
     return (
         <div className="container mx-auto">
@@ -452,7 +346,29 @@ const StudentManagement: React.FC = () => {
                     )}
                 </div>
             </div>
-            {isModalOpen && <StudentModal />}
+            <StudentModalComponent
+                isOpen={isModalOpen}
+                isEditing={!!editingStudent}
+                isSubmitting={isSubmitting}
+                newStudentName={newStudentName}
+                selectedClassId={selectedClassId}
+                enrollmentDate={enrollmentDate}
+                selectedStatus={selectedStatus}
+                studentPhoneNumber={studentPhoneNumber}
+                parentPhoneNumber={parentPhoneNumber}
+                parentAddress={parentAddress}
+                formErrors={formErrors}
+                classes={classes}
+                onNameChange={setNewStudentName}
+                onClassChange={setSelectedClassId}
+                onEnrollmentDateChange={setEnrollmentDate}
+                onStatusChange={setSelectedStatus}
+                onStudentPhoneChange={setStudentPhoneNumber}
+                onParentPhoneChange={setParentPhoneNumber}
+                onParentAddressChange={setParentAddress}
+                onSubmit={handleSubmit}
+                onClose={handleCloseModal}
+            />
         </div>
     );
 };

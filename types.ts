@@ -25,13 +25,20 @@ export interface School {
 }
 
 export enum ClassLevel {
-    SIXIEME = "6ème",
-    CINQUIEME = "5ème",
-    QUATRIEME = "4ème",
-    TROISIEME = "3ème",
-    SECONDE = "Seconde",
-    PREMIERE = "Première",
-    TERMINALE = "Terminale"
+    // Cycle Primaire (6 années)
+    PRIMAIRE_1ERE = "1ère",
+    PRIMAIRE_2EME = "2ème",
+    PRIMAIRE_3EME = "3ème",
+    PRIMAIRE_4EME = "4ème",
+    PRIMAIRE_5EME = "5ème",
+    PRIMAIRE_6EME = "6ème",
+    // Cycle Secondaire (6 années)
+    SECONDAIRE_7EB = "7ème EB",
+    SECONDAIRE_8EB = "8ème EB",
+    SECONDAIRE_1 = "1ère",
+    SECONDAIRE_2 = "2ème",
+    SECONDAIRE_3 = "3ème",
+    SECONDAIRE_4 = "4ème"
 }
 
 export interface Class {
@@ -78,7 +85,7 @@ export interface Payment {
 }
 
 export interface Notification {
-    id: number;
+    id: number | string;
     title: string;
     content: string;
     date: string;

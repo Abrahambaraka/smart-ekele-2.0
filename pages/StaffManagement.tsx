@@ -4,6 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { db, app } from '../lib/firebase';
 import { collection, query, where, getDocs, addDoc, deleteDoc, doc } from 'firebase/firestore';
 import { getFunctions, httpsCallable } from 'firebase/functions';
+import { useToast } from '../contexts/ToastContext';
 
 interface StaffMember {
     id: string;
@@ -20,11 +21,13 @@ interface Invite {
 
 const StaffManagement: React.FC = () => {
     const { user } = useAuth();
+    const toast = useToast();
     const [staff, setStaff] = useState<StaffMember[]>([]);
     const [invites, setInvites] = useState<Invite[]>([]);
     const [loading, setLoading] = useState(true);
     const [newEmail, setNewEmail] = useState('');
     const [inviteLoading, setInviteLoading] = useState(false);
+    const [emailError, setEmailError] = useState('');
 
     const fetchData = async () => {
         if (!user?.schoolId) return;
@@ -56,7 +59,24 @@ const StaffManagement: React.FC = () => {
 
     const handleInvite = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!newEmail || !user?.schoolId) return;
+        setEmailError('');
+
+        if (!newEmail.trim()) {
+            setEmailError('Veuillez entrer une adresse email.');
+            return;
+        }
+
+        // Validation email simple
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(newEmail)) {
+            setEmailError('Format email invalide.');
+            return;
+        }
+
+        if (!user?.schoolId) {
+            toast.warning('Votre profil n\'est pas lié à une école.');
+            return;
+        }
 
         setInviteLoading(true);
 
@@ -65,12 +85,12 @@ const StaffManagement: React.FC = () => {
         const alreadyInvited = invites.find(i => i.email.toLowerCase() === newEmail.toLowerCase());
 
         if (alreadyMember) {
-            alert("Cet utilisateur est déjà membre du personnel.");
+            toast.error("Cet utilisateur est déjà membre du personnel.");
             setInviteLoading(false);
             return;
         }
         if (alreadyInvited) {
-            alert("Une invitation a déjà été envoyée à cette adresse.");
+            toast.error("Une invitation a déjà été envoyée à cette adresse.");
             setInviteLoading(false);
             return;
         }
@@ -92,29 +112,29 @@ const StaffManagement: React.FC = () => {
                     schoolId: user.schoolId,
                     inviteId: inviteRef.id,
                 });
+                toast.success(`Invitation créée et email envoyé à ${newEmail}`);
             } catch (mailErr: any) {
                 console.error('Erreur lors de l\'envoi de l\'email:', mailErr);
-                // On continue: l'invitation Firestore existe, l'email peut être renvoyé plus tard
+                toast.warning(`Invitation créée. Email non envoyé (configuration en cours).`);
             }
 
             setNewEmail('');
             fetchData();
-            alert(`Invitation créée et email d'invitation envoyé (si configuration Gmail en place).\n` +
-                  `Demandez à ${newEmail} de s'inscrire sur l'application avec cette adresse.`);
         } catch (err: any) {
-            alert("Erreur lors de l'invitation: " + err.message);
+            toast.error(`Erreur lors de l'invitation: ${err?.message || 'Une erreur est survenue'}`);
         } finally {
             setInviteLoading(false);
         }
     };
 
     const handleCancelInvite = async (id: string) => {
-        if(!window.confirm("Annuler cette invitation ?")) return;
+        if(!window.confirm("Êtes-vous sûr de vouloir annuler cette invitation ?")) return;
         try {
             await deleteDoc(doc(db, "invites", id));
             setInvites(invites.filter(i => i.id !== id));
+            toast.success("Invitation annulée.");
         } catch (e: any) {
-            console.error(e);
+            toast.error(`Erreur: ${e?.message || 'Une erreur est survenue'}`);
         }
     };
 
@@ -132,15 +152,18 @@ const StaffManagement: React.FC = () => {
                         </p>
                         <form onSubmit={handleInvite}>
                             <div className="mb-4">
-                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Adresse Email</label>
+                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Adresse Email *</label>
                                 <input 
                                     type="email" 
                                     required
                                     value={newEmail}
-                                    onChange={e => setNewEmail(e.target.value)}
-                                    className="w-full px-3 py-2 border border-slate-300 rounded-md dark:bg-slate-700 dark:border-slate-600 dark:text-white"
+                                    onChange={e => { setNewEmail(e.target.value); setEmailError(''); }}
+                                    className={`w-full px-3 py-2 border rounded-md dark:bg-slate-700 dark:border-slate-600 dark:text-white transition-colors ${
+                                        emailError ? 'border-red-500' : 'border-slate-300'
+                                    }`}
                                     placeholder="prof@exemple.com"
                                 />
+                                {emailError && <p className="mt-1 text-sm text-red-600 dark:text-red-400">{emailError}</p>}
                             </div>
                             <button 
                                 type="submit" 

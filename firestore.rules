@@ -33,19 +33,19 @@ service cloud.firestore {
 
     // CLASSES
     match /classes/{classId} {
-      allow read: if belongsToSchool(resource.data.school_id);
+      allow read: if request.auth != null;
       allow write: if isDirector() && belongsToSchool(request.resource.data.school_id);
     }
 
     // STUDENTS
     match /students/{studentId} {
-      allow read: if belongsToSchool(resource.data.school_id);
+      allow read: if request.auth != null;
       allow write: if isDirector() && belongsToSchool(request.resource.data.school_id);
     }
 
     // PAYMENTS
     match /payments/{paymentId} {
-      allow read: if belongsToSchool(resource.data.school_id);
+      allow read: if request.auth != null;
       allow write: if isDirector() && belongsToSchool(request.resource.data.school_id);
     }
   }

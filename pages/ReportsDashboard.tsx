@@ -1,10 +1,11 @@
 
 // Fix: Import 'useMemo' from 'react' to resolve the "Cannot find name 'useMemo'" error.
-import React, { useState, useMemo } from 'react';
-import { MOCK_CLASSES, MOCK_NOTIFICATIONS, MOCK_STUDENTS } from '../constants';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Student, Role } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { useSchoolSettings } from '../lib/useSchoolSettings';
+import { db } from '../lib/firebase';
+import { collection, getDocs, onSnapshot, query, where } from 'firebase/firestore';
 
 interface ClassReport {
   classId: number | string;
@@ -38,28 +39,71 @@ const ReportsDashboard: React.FC = () => {
     const [selectedClassId, setSelectedClassId] = useState<'all' | number | string>('all');
     const [reportData, setReportData] = useState<ClassReport[] | null>(null);
     const [reportGenerated, setReportGenerated] = useState(false);
+    const [classes, setClasses] = useState<{ id: string; name: string }[]>([]);
+    const [students, setStudents] = useState<Student[]>([]);
+    const [notifications, setNotifications] = useState<{ id: string; title: string; date: string; target?: string; student_id?: string; class_id?: string }[]>([]);
+
+    // Load base data from Firestore
+    useEffect(() => {
+        if (!user?.schoolId) return;
+        (async () => {
+            try {
+                const qClasses = query(collection(db, 'classes'), where('school_id', '==', user.schoolId));
+                const classesSnap = await getDocs(qClasses);
+                setClasses(classesSnap.docs.map(d => ({ id: d.id, name: (d.data() as any).name || 'Sans nom' })));
+
+                const qStudents = query(collection(db, 'students'), where('school_id', '==', user.schoolId));
+                const studentsSnap = await getDocs(qStudents);
+                const mapped: Student[] = studentsSnap.docs.map(d => {
+                    const data: any = d.data();
+                    return {
+                        id: d.id,
+                        name: data.name || 'N/A',
+                        classId: data.class_id || undefined,
+                        status: data.status || 'Active',
+                        enrollmentDate: data.enrollmentDate || new Date().toISOString().split('T')[0],
+                        phoneNumber: data.phoneNumber,
+                        parentPhoneNumber: data.parentPhoneNumber,
+                        parentAddress: data.parentAddress,
+                    } as Student;
+                });
+                setStudents(mapped);
+
+                const qNotifs = query(collection(db, 'notifications'), where('school_id', '==', user.schoolId));
+                const unsub = onSnapshot(qNotifs, (snap) => {
+                    const list = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
+                    setNotifications(list);
+                });
+                return () => unsub();
+            } catch (e) {
+                // noop basic error handling
+            }
+        })();
+    }, [user?.schoolId]);
 
     const handleGenerateReport = () => {
-        const absenceNotifications = MOCK_NOTIFICATIONS.filter(notif => 
-            notif.date === reportDate && (notif.title.toLowerCase().includes('absence') || notif.title.toLowerCase().includes('renvoi'))
-        );
+        // Filter notifications for selected date and absence-like events
+        const dayNotifs = notifications.filter(n => (n.date || '') === reportDate && (
+            (n.title || '').toLowerCase().includes('absence') || (n.title || '').toLowerCase().includes('renvoi')
+        ));
 
-        const absentStudentNames = absenceNotifications.map(notif => {
-            const match = notif.target.match(/Parent de (.+)/);
-            return match ? match[1] : null;
-        }).filter((name): name is string => name !== null);
+        const classesToReport = selectedClassId === 'all'
+            ? classes
+            : classes.filter(c => c.id === selectedClassId);
 
-        const classesToReport = selectedClassId === 'all' 
-            ? MOCK_CLASSES 
-            : MOCK_CLASSES.filter(c => c.id === selectedClassId);
-
-        const newReportData = classesToReport.map(cls => {
-            const studentsInClass = MOCK_STUDENTS.filter(s => s.classId === cls.id);
+        const newReportData: ClassReport[] = classesToReport.map(cls => {
+            const studentsInClass = students.filter(s => String(s.classId) === String(cls.id));
             const absentStudents: Student[] = [];
             const presentStudents: Student[] = [];
 
+            const absentStudentIds = new Set(
+                dayNotifs
+                    .filter(n => String(n.class_id) === String(cls.id))
+                    .map(n => String(n.student_id))
+            );
+
             studentsInClass.forEach(student => {
-                if (absentStudentNames.includes(student.name)) {
+                if (absentStudentIds.has(String(student.id))) {
                     absentStudents.push(student);
                 } else {
                     presentStudents.push(student);
@@ -79,28 +123,26 @@ const ReportsDashboard: React.FC = () => {
     };
     
     const handleExport = () => {
-        // This export will now use all classes, regardless of the filter, for a full report.
-        const allNotifications = MOCK_NOTIFICATIONS.filter(notif => 
-            notif.date === reportDate && (notif.title.toLowerCase().includes('absence') || notif.title.toLowerCase().includes('renvoi'))
+        // This export will now use all classes for a full report using Firestore-backed data
+        const allNotifications = notifications.filter(notif => 
+            (notif.date || '') === reportDate && ((notif.title || '').toLowerCase().includes('absence') || (notif.title || '').toLowerCase().includes('renvoi'))
         );
-        const allAbsentStudentNames = allNotifications.map(notif => {
-            const match = notif.target.match(/Parent de (.+)/);
-            return match ? match[1] : null;
-        }).filter((name): name is string => name !== null);
-    
-        const fullReportData = MOCK_CLASSES.map(cls => {
-            const studentsInClass = MOCK_STUDENTS.filter(s => s.classId === cls.id);
+        const absentByClass = new Map<string, Set<string>>();
+        allNotifications.forEach(n => {
+            const cid = String(n.class_id || '');
+            const sid = String(n.student_id || '');
+            if (!absentByClass.has(cid)) absentByClass.set(cid, new Set());
+            if (sid) absentByClass.get(cid)!.add(sid);
+        });
+
+        const fullReportData: ClassReport[] = classes.map(cls => {
+            const studentsInClass = students.filter(s => String(s.classId) === String(cls.id));
+            const absentSet = absentByClass.get(String(cls.id)) || new Set<string>();
             const absentStudents: Student[] = [];
             const presentStudents: Student[] = [];
-    
             studentsInClass.forEach(student => {
-                if (allAbsentStudentNames.includes(student.name)) {
-                    absentStudents.push(student);
-                } else {
-                    presentStudents.push(student);
-                }
+                if (absentSet.has(String(student.id))) absentStudents.push(student); else presentStudents.push(student);
             });
-    
             return {
                 classId: cls.id,
                 className: cls.name,
