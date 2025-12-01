@@ -71,9 +71,12 @@ jobs:
             if [ -f .env.local ]; then
               echo "🔁 Fallback: copie de .env.local vers .env"
               cp .env.local .env
+            elif [ -f .env.example ]; then
+              echo "🔁 Fallback: copie de .env.example vers .env"
+              cp .env.example .env
             else
-              echo "❌ Erreur: Secrets manquants (${missing[*]}) et aucun .env.local trouvé." >&2
-              echo "Veuillez créer les secrets GitHub VITE_* ou ajouter un fichier .env.local au repo." >&2
+              echo "❌ Erreur: Secrets manquants (${missing[*]}) et aucun .env.local/.env.example trouvé." >&2
+              echo "Veuillez créer les secrets GitHub VITE_* ou ajouter un fichier .env.local (ou .env.example) au repo." >&2
               exit 1
             fi
           else
